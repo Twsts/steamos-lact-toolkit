@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly LOG_TAG="steamos-lact-restore"
+readonly MODPROBE_FILE="/etc/modprobe.d/99-amdgpu-overdrive.conf"
+readonly EXPECTED_PPFEATUREMASK="0xFFF7FFFF"
+readonly RUNTIME_PPFEATUREMASK="/sys/module/amdgpu/parameters/ppfeaturemask"
+readonly REBOOT_MARKER="/var/lib/steamos-lact-toolkit/reboot-required"
+
+log() {
+  systemd-cat -t "${LOG_TAG}" -p info echo "$*"
+  echo "$*"
+}
+
+warn() {
+  systemd-cat -t "${LOG_TAG}" -p warning echo "$*"
+  echo "WARN: $*" >&2
+}
+
+is_root() {
+  [[ "$(id -u)" == "0" ]]
+}
+
+ensure_root() {
+  if ! is_root; then
+    echo "Run as root." >&2
+    exit 1
+  fi
+}
+
+readonly_status() {
+  steamos-readonly status 2>/dev/null || true
+}
+
+disable_readonly_if_needed() {
+  if [[ "$(readonly_status)" == "enabled" ]]; then
+    log "Disabling SteamOS readonly mode temporarily"
+    steamos-readonly disable
+    READONLY_WAS_ENABLED=1
+  else
+    READONLY_WAS_ENABLED=0
+  fi
+}
+
+restore_readonly_if_needed() {
+  if [[ "${READONLY_WAS_ENABLED:-0}" == "1" ]]; then
+    log "Re-enabling SteamOS readonly mode"
+    steamos-readonly enable
+  fi
+}
+
+ensure_modprobe_file() {
+  mkdir -p /etc/modprobe.d
+  if [[ ! -f "${MODPROBE_FILE}" ]] || ! grep -q "ppfeaturemask=${EXPECTED_PPFEATUREMASK}" "${MODPROBE_FILE}"; then
+    log "Writing ${MODPROBE_FILE}"
+    printf 'options amdgpu ppfeaturemask=%s\n' "${EXPECTED_PPFEATUREMASK}" >"${MODPROBE_FILE}"
+    return 0
+  fi
+  return 1
+}
+
+runtime_overdrive_enabled() {
+  [[ -r "${RUNTIME_PPFEATUREMASK}" ]] && [[ "$(tr '[:upper:]' '[:lower:]' <"${RUNTIME_PPFEATUREMASK}")" == "0xfff7ffff" ]]
+}
+
+rebuild_initramfs() {
+  log "Regenerating initramfs with mkinitcpio -P"
+  mkinitcpio -P
+}
+
+main() {
+  ensure_root
+
+  mkdir -p "$(dirname "${REBOOT_MARKER}")"
+
+  local changed=0
+  disable_readonly_if_needed
+  trap restore_readonly_if_needed EXIT
+
+  if ensure_modprobe_file; then
+    changed=1
+  fi
+
+  if runtime_overdrive_enabled; then
+    rm -f "${REBOOT_MARKER}"
+    log "AMD overdrive is active"
+    return 0
+  fi
+
+  warn "AMD overdrive is not active in the running kernel"
+  if [[ -f "${REBOOT_MARKER}" && "${changed}" != "1" ]]; then
+    warn "Reboot is already required; not regenerating initramfs again"
+    return 0
+  fi
+
+  rebuild_initramfs
+  date --iso-8601=seconds >"${REBOOT_MARKER}"
+  warn "Reboot required before LACT voltage_offset can apply"
+
+  if [[ "${changed}" == "1" ]]; then
+    warn "Overdrive config was missing or wrong and has been restored"
+  fi
+}
+
+main "$@"

@@ -1,0 +1,8 @@
+[Unit]
+Description=Restore SteamOS LACT Toolkit AMD overdrive after SteamOS updates
+After=multi-user.target
+ConditionPathExists=/etc/lact/config.yaml
+
+[Service]
+Type=oneshot
+ExecStart=/etc/steamos-lact-toolkit/steamos-lact-restore

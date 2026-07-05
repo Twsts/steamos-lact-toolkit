@@ -1,0 +1,48 @@
+# SteamOS LACT Toolkit
+
+Toolkit for AMD GPU monitoring, LACT tuning, and SteamOS update persistence on
+DIY SteamOS machines.
+
+This project contains:
+
+- `decky/`: Decky Loader plugin for reading LACT status, applying tuning values,
+  and saving/deleting presets.
+- `persistence/`: SteamOS atomic-update keep-list and systemd timer for keeping
+  LACT config and AMD overdrive kernel settings intact across SteamOS updates.
+
+## What It Does
+
+The Decky plugin talks to LACT through `/run/lactd.sock`. It detects the first
+LACT GPU device, displays live telemetry, compares saved LACT configuration with
+runtime driver values, and lets the user apply or save custom presets.
+
+The persistence helper preserves LACT and AMD overdrive files across SteamOS
+atomic updates and warns when a reboot is required before voltage offset tuning
+can apply again.
+
+## Requirements
+
+- SteamOS or SteamOS-like Linux system
+- AMD GPU supported by LACT
+- LACT installed and `lactd` running
+- Decky Loader for the plugin
+
+## Safety
+
+GPU tuning can cause crashes, visual corruption, or reboots if values are too
+aggressive. Start with conservative settings and test stability before saving a
+preset.
+
+## Install
+
+Build and install the Decky plugin from `decky/`.
+
+Install the SteamOS persistence helper from `persistence/`:
+
+```bash
+cd persistence
+sudo ./install.sh
+sudo systemctl start steamos-lact-restore.service
+```
+
+See the README in each subdirectory for details.
