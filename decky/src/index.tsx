@@ -58,6 +58,11 @@ type Status = {
   health_log?: string;
   current_profile?: string;
   profiles?: ProfileSummary[];
+  limits?: {
+    power_cap?: NumericRange;
+    max_memory_clock?: NumericRange;
+    voltage_offset?: NumericRange;
+  };
 };
 
 type GpuConfig = {
@@ -78,6 +83,12 @@ type ProfileSummary = {
   voltage_offset: number;
   max_memory_clock: number;
   custom?: boolean;
+};
+
+type NumericRange = {
+  min?: number;
+  max?: number;
+  default?: number;
 };
 
 const getStatus = callable<[], Status>("get_status");
@@ -115,6 +126,14 @@ function fmt(value: number | undefined, suffix: string, digits = 0): string {
 function tempValue(value: { current?: number } | number | undefined): number | undefined {
   if (typeof value === "number") return value;
   return value?.current;
+}
+
+function rangeMin(range: NumericRange | undefined, fallback: number): number {
+  return Math.round(range?.min ?? fallback);
+}
+
+function rangeMax(range: NumericRange | undefined, fallback: number): number {
+  return Math.round(range?.max ?? fallback);
 }
 
 function StatusCard({ status }: { status: Status | null }) {
@@ -311,9 +330,12 @@ class Content extends Component<Record<string, never>, ContentState> {
     const selectedProfile = status?.current_profile && status.current_profile !== "custom" ? status.current_profile : "__current";
     const selectedProfileInfo = profiles.find((profile) => profile.id === selectedProfile);
     const edit = draft ?? this.draftFromStatus(status ?? { ok: false });
-    const powerMin = Math.round(status?.stats?.power?.cap_min ?? 0);
-    const powerMax = Math.round(status?.stats?.power?.cap_max ?? Math.max(edit.power_cap ?? 0, 1));
-    const memoryMax = Math.max(Math.round(status?.applied?.max_memory_clock ?? edit.max_memory_clock ?? 0), 1);
+    const powerMin = rangeMin(status?.limits?.power_cap, status?.stats?.power?.cap_min ?? 0);
+    const powerMax = rangeMax(status?.limits?.power_cap, status?.stats?.power?.cap_max ?? Math.max(edit.power_cap ?? 0, 1));
+    const memoryMin = rangeMin(status?.limits?.max_memory_clock, 0);
+    const memoryMax = rangeMax(status?.limits?.max_memory_clock, Math.max(edit.max_memory_clock ?? 0, 1));
+    const voltageMin = rangeMin(status?.limits?.voltage_offset, -300);
+    const voltageMax = rangeMax(status?.limits?.voltage_offset, 0);
 
     return (
       <>
@@ -375,8 +397,8 @@ class Content extends Component<Record<string, never>, ContentState> {
                 <SliderField
                   label="Undervolt"
                   value={Math.round(edit.voltage_offset ?? 0)}
-                  min={-300}
-                  max={0}
+                  min={voltageMin}
+                  max={voltageMax}
                   step={5}
                   showValue
                   editableValue
@@ -389,7 +411,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                 <SliderField
                   label="VRAM max"
                   value={Math.round(edit.max_memory_clock ?? memoryMax)}
-                  min={0}
+                  min={memoryMin}
                   max={memoryMax}
                   step={1}
                   showValue

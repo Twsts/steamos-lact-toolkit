@@ -10,11 +10,19 @@ This project contains:
 - `persistence/`: SteamOS atomic-update keep-list and systemd timer for keeping
   LACT config and AMD overdrive kernel settings intact across SteamOS updates.
 
+## Screenshots
+
+<p>
+  <img src="screenshots/status.png" alt="SteamOS LACT Toolkit status and verification view" width="48%">
+  <img src="screenshots/tuning.png" alt="SteamOS LACT Toolkit custom tuning controls" width="48%">
+</p>
+
 ## What It Does
 
-The Decky plugin talks to LACT through `/run/lactd.sock`. It detects the first
-LACT GPU device, displays live telemetry, compares saved LACT configuration with
-runtime driver values, and lets the user apply or save custom presets.
+The Decky plugin talks to LACT through `/run/lactd.sock`. It prefers a dedicated
+LACT GPU device when one is available, displays live telemetry, compares saved
+LACT configuration with runtime driver values, and lets the user apply or save
+custom presets.
 
 The persistence helper preserves LACT and AMD overdrive files across SteamOS
 atomic updates and warns when a reboot is required before voltage offset tuning

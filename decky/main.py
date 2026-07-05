@@ -132,7 +132,7 @@ class Plugin:
             return False
         for key, value in desired.items():
             if key == "pmfw_options":
-                if (config.get("pmfw_options") or {}).get("zero_rpm") is not True:
+                if (config.get("pmfw_options") or {}).get("zero_rpm") != (value or {}).get("zero_rpm"):
                     return False
             elif config.get(key) != value:
                 return False
@@ -214,6 +214,7 @@ class Plugin:
                 "overdrive_ok": overdrive_ok,
                 "applied_ok": applied_ok,
                 "applied": applied,
+                "limits": self._limits(stats, clocks_info),
                 "stats": {
                     "clockspeed": stats.get("clockspeed", {}),
                     "voltage": stats.get("voltage", {}),
@@ -243,6 +244,29 @@ class Plugin:
             "zero_rpm": ((stats.get("fan") or {}).get("pmfw_info") or {}).get("zero_rpm_enable"),
             "gpu_voltage": (stats.get("voltage") or {}).get("gpu"),
             "vram_clock": (stats.get("clockspeed") or {}).get("vram_clockspeed"),
+        }
+
+    def _limits(self, stats: dict, clocks_info: dict) -> dict:
+        table = ((clocks_info or {}).get("table") or {}).get("value") or {}
+        data = table.get("data") or {}
+        od_range = data.get("od_range") or {}
+        mclk = od_range.get("mclk") or {}
+        voltage_offset = od_range.get("voltage_offset") or {}
+        power = stats.get("power") or {}
+        return {
+            "power_cap": {
+                "min": power.get("cap_min"),
+                "max": power.get("cap_max"),
+                "default": power.get("cap_default"),
+            },
+            "max_memory_clock": {
+                "min": mclk.get("min"),
+                "max": mclk.get("max") or clocks_info.get("max_mclk"),
+            },
+            "voltage_offset": {
+                "min": voltage_offset.get("min"),
+                "max": voltage_offset.get("max"),
+            },
         }
 
     async def restore_profile(self) -> dict:

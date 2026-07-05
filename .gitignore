@@ -1,5 +1,6 @@
 decky/node_modules
 decky/dist/
 decky/__pycache__/
+screenshots/candidates/
 *.pyc
 .DS_Store
