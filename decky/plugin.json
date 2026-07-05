@@ -2,6 +2,7 @@
   "name": "SteamOS LACT Toolkit",
   "author": "SteamOS LACT Toolkit contributors",
   "api_version": 1,
+  "flags": [],
   "publish": {
     "tags": ["lact", "gpu", "amd", "steamos"],
     "description": "Monitor and tune AMD GPU LACT settings from Decky Loader.",

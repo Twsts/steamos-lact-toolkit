@@ -147,7 +147,13 @@ class Plugin:
     def _select_gpu(self, devices: list[dict]) -> dict | None:
         if not isinstance(devices, list):
             return None
-        return next((device for device in devices if device.get("id")), None)
+        dedicated = next((device for device in devices if device.get("id") and device.get("device_type") == "Dedicated"), None)
+        if dedicated:
+            return dedicated
+        return next((device for device in devices if device.get("id") and device.get("device_type") != "Integrated"), None) or next(
+            (device for device in devices if device.get("id")),
+            None,
+        )
 
     def _read_text(self, path: Path, limit: int = 4000) -> str:
         try:
@@ -174,7 +180,7 @@ class Plugin:
 
             current_profile = self._detect_profile(config)
             desired = self._profile_config(current_profile) if current_profile else self._sanitize_config(config)
-            profile_ok = current_profile is not None
+            profile_ok = True
             overdrive_ok = system_info.get("amdgpu_overdrive_enabled") is True
             applied = self._applied_values(stats, clocks_info)
             applied_ok = (
@@ -183,12 +189,12 @@ class Plugin:
                 and applied.get("voltage_offset") == desired["voltage_offset"]
             )
             level = "ok" if profile_ok and overdrive_ok and applied_ok else "warn"
-            if not profile_ok:
-                title = "Profile drift"
-            elif not overdrive_ok:
+            if not overdrive_ok:
                 title = "Undervolt inactive"
             elif not applied_ok:
                 title = "Runtime mismatch"
+            elif not current_profile:
+                title = "Unsaved preset"
             else:
                 title = "Ready"
 
@@ -198,6 +204,7 @@ class Plugin:
                 "title": title,
                 "gpu_id": gpu_id,
                 "gpu_name": gpu.get("name") or gpu_id,
+                "gpu_type": gpu.get("device_type"),
                 "system": system_info,
                 "config": config,
                 "desired": desired,
