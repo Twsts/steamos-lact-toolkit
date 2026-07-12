@@ -56,18 +56,34 @@ class Plugin:
                 return self._sanitize_config(custom.get("config") or {})
         raise ValueError(f"Unknown profile: {profile_id}")
 
-    def _profile_summaries(self) -> list[dict]:
-        return [
+    def _profile_summaries(self, lact_profiles: dict | None, gpu_id: str) -> list[dict]:
+        profiles = [
+            {
+                "id": f"lact:{name}",
+                "name": name,
+                "source": "lact",
+                "power_cap": config.get("power_cap"),
+                "voltage_offset": config.get("voltage_offset"),
+                "max_memory_clock": config.get("max_memory_clock"),
+                "custom": False,
+            }
+            for name, profile in (lact_profiles or {}).items()
+            for config in [(profile.get("gpus") or {}).get(gpu_id)]
+            if isinstance(profile, dict) and isinstance(config, dict)
+        ]
+        profiles.extend(
             {
                 "id": custom["id"],
                 "name": custom["name"],
+                "source": "toolkit",
                 "power_cap": custom["config"]["power_cap"],
                 "voltage_offset": custom["config"]["voltage_offset"],
                 "max_memory_clock": custom["config"]["max_memory_clock"],
                 "custom": True,
             }
             for custom in self._load_custom_profiles()
-        ]
+        )
+        return profiles
 
     def _load_custom_profiles(self) -> list[dict]:
         try:
@@ -138,7 +154,14 @@ class Plugin:
                 return False
         return True
 
-    def _detect_profile(self, config) -> str | None:
+    def _detect_profile(self, config, lact_profiles: dict | None = None, gpu_id: str | None = None) -> str | None:
+        if gpu_id:
+            for name, profile in (lact_profiles or {}).items():
+                if not isinstance(profile, dict):
+                    continue
+                lact_config = (profile.get("gpus") or {}).get(gpu_id)
+                if isinstance(lact_config, dict) and self._config_matches(config, self._sanitize_config(lact_config)):
+                    return f"lact:{name}"
         for custom in self._load_custom_profiles():
             if self._config_matches(config, custom["config"]):
                 return custom["id"]
@@ -174,12 +197,14 @@ class Plugin:
             gpu_id = gpu["id"]
 
             system_info = await self._lact_request("system_info")
+            lact_profile_state = await self._list_lact_profiles()
+            lact_profiles = lact_profile_state.get("profiles") or {}
             config = await self._lact_request("get_gpu_config", {"id": gpu_id})
             stats = await self._lact_request("device_stats", {"id": gpu_id})
             clocks_info = await self._lact_request("device_clocks_info", {"id": gpu_id})
 
-            current_profile = self._detect_profile(config)
-            desired = self._profile_config(current_profile) if current_profile else self._sanitize_config(config)
+            current_profile = self._detect_profile(config, lact_profiles, gpu_id)
+            desired = self._config_for_profile_id(current_profile, lact_profiles, gpu_id) if current_profile else self._sanitize_config(config)
             profile_ok = True
             overdrive_ok = system_info.get("amdgpu_overdrive_enabled") is True
             applied = self._applied_values(stats, clocks_info)
@@ -209,7 +234,9 @@ class Plugin:
                 "config": config,
                 "desired": desired,
                 "current_profile": current_profile or "custom",
-                "profiles": self._profile_summaries(),
+                "profiles": self._profile_summaries(lact_profiles, gpu_id),
+                "lact_current_profile": lact_profile_state.get("current_profile"),
+                "lact_auto_switch": lact_profile_state.get("auto_switch"),
                 "profile_ok": profile_ok,
                 "overdrive_ok": overdrive_ok,
                 "applied_ok": applied_ok,
@@ -274,7 +301,11 @@ class Plugin:
 
     async def apply_profile(self, profile_id: str) -> dict:
         try:
-            desired = self._profile_config(str(profile_id))
+            profile_id = str(profile_id)
+            if profile_id.startswith("lact:"):
+                await self._lact_request("set_profile", {"name": profile_id.removeprefix("lact:"), "auto_switch": False})
+                return await self.get_status()
+            desired = self._profile_config(profile_id)
             gpu_id = await self._selected_gpu_id()
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
             await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
@@ -345,6 +376,24 @@ class Plugin:
         if not gpu:
             raise RuntimeError("No LACT GPU device found")
         return gpu["id"]
+
+    async def _list_lact_profiles(self) -> dict:
+        try:
+            data = await self._lact_request("list_profiles", {"include_state": True})
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            decky.logger.exception("SteamOS LACT Toolkit LACT profile list failed")
+            return {}
+
+    def _config_for_profile_id(self, profile_id: str | None, lact_profiles: dict | None, gpu_id: str) -> dict:
+        if profile_id and profile_id.startswith("lact:"):
+            profile = (lact_profiles or {}).get(profile_id.removeprefix("lact:"))
+            config = (profile.get("gpus") or {}).get(gpu_id) if isinstance(profile, dict) else None
+            if isinstance(config, dict):
+                return self._sanitize_config(config)
+        if profile_id:
+            return self._profile_config(profile_id)
+        raise ValueError("No profile selected")
 
     async def _main(self):
         decky.logger.info("SteamOS LACT Toolkit plugin loaded")

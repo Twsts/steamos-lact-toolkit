@@ -57,6 +57,8 @@ type Status = {
   health_status?: string;
   health_log?: string;
   current_profile?: string;
+  lact_current_profile?: string | null;
+  lact_auto_switch?: boolean;
   profiles?: ProfileSummary[];
   limits?: {
     power_cap?: NumericRange;
@@ -79,9 +81,10 @@ type GpuConfig = {
 type ProfileSummary = {
   id: string;
   name: string;
-  power_cap: number;
-  voltage_offset: number;
-  max_memory_clock: number;
+  source?: "lact" | "toolkit";
+  power_cap?: number;
+  voltage_offset?: number;
+  max_memory_clock?: number;
   custom?: boolean;
 };
 
@@ -141,22 +144,27 @@ function StatusCard({ status }: { status: Status | null }) {
   const color = colorFor(level);
   let title = status?.title ?? "Checking";
   let detail = "Reading LACT status...";
+  const selectedProfile = status?.profiles?.find((profile) => profile.id === status.current_profile);
+  const selectedLabel =
+    selectedProfile?.source === "lact"
+      ? `LACT profile "${selectedProfile.name}"`
+      : selectedProfile?.source === "toolkit"
+        ? `Toolkit preset "${selectedProfile.name}"`
+        : undefined;
 
   if (status?.ok) {
     if (status.profile_ok && status.overdrive_ok) {
       if (status.applied_ok) {
-        detail =
-          status.current_profile && status.current_profile !== "custom"
-            ? "Selected Toolkit preset matches the driver runtime values."
-            : "Current LACT config matches the driver runtime values.";
+        detail = selectedLabel
+          ? `${selectedLabel} matches the driver runtime values.`
+          : "Current LACT config matches the driver runtime values.";
       } else {
-        detail =
-          status.current_profile && status.current_profile !== "custom"
-            ? "Selected Toolkit preset is saved, but runtime values do not match."
-            : "Current LACT config is saved, but runtime values do not match.";
+        detail = selectedLabel
+          ? `${selectedLabel} is selected, but runtime values do not match.`
+          : "Current LACT config is saved, but runtime values do not match.";
       }
     } else if (!status.profile_ok) {
-      detail = "Saved LACT values do not match any saved preset.";
+      detail = "Saved LACT values do not match any known profile.";
     } else if (!status.overdrive_ok) {
       detail = "Profile is saved, but kernel overdrive is not active.";
     }
@@ -215,10 +223,15 @@ function VerificationGrid({ status }: { status: Status }) {
   const config = status.config ?? {};
   const desired = status.desired ?? {};
   const applied = status.applied ?? {};
+  const selectedProfile = status.profiles?.find((profile) => profile.id === status.current_profile);
+  const profileText = selectedProfile
+    ? `${selectedProfile.source === "lact" ? "LACT" : "Toolkit"}: ${selectedProfile.name}`
+    : "Current LACT config";
   return (
     <div style={{ display: "grid", gap: "4px" }}>
       <KV label="Overdrive" value={status.overdrive_ok ? "Active" : "Inactive"} />
-      <KV label="Toolkit preset" value={status.current_profile === "custom" ? "Current LACT config" : status.current_profile ?? "n/a"} />
+      <KV label="Profile" value={profileText} />
+      <KV label="LACT current" value={status.lact_current_profile ?? "Default config"} />
       <KV label="Applied" value={status.applied_ok ? "Verified" : "Mismatch"} />
       <KV label="Power cap" value={`${config.power_cap ?? "n/a"} -> ${applied.power_cap ?? "n/a"} W (target ${desired.power_cap ?? "n/a"})`} />
       <KV label="Undervolt" value={`${config.voltage_offset ?? "n/a"} -> ${applied.voltage_offset ?? "n/a"} mV (target ${desired.voltage_offset ?? "n/a"})`} />
@@ -331,10 +344,10 @@ class Content extends Component<Record<string, never>, ContentState> {
   render() {
     const { status, busy, dirty, draft, presetName } = this.state;
     const profiles = status?.profiles ?? [];
-    const profileOptions = profiles.length ? profiles.map((profile) => ({
+    const profileOptions = [{ data: "__current", label: "Current LACT config" }, ...profiles.map((profile) => ({
       data: profile.id,
-      label: `${profile.name} ${profile.power_cap} W / ${profile.voltage_offset} mV`,
-    })) : [{ data: "__current", label: "Current LACT config" }];
+      label: `${profile.source === "lact" ? "LACT" : "Toolkit"}: ${profile.name} ${fmt(profile.power_cap, " W")} / ${fmt(profile.voltage_offset, " mV")}`,
+    }))];
     const selectedProfile = status?.current_profile && status.current_profile !== "custom" ? status.current_profile : "__current";
     const selectedProfileInfo = profiles.find((profile) => profile.id === selectedProfile);
     const edit = draft ?? this.draftFromStatus(status ?? { ok: false });
@@ -367,7 +380,7 @@ class Content extends Component<Record<string, never>, ContentState> {
               </PanelSectionRow>
               <PanelSectionRow>
                 <DropdownItem
-                  label="Toolkit preset"
+                  label="Profile"
                   rgOptions={profileOptions}
                   selectedOption={selectedProfile}
                   disabled={busy}
@@ -380,7 +393,7 @@ class Content extends Component<Record<string, never>, ContentState> {
               {selectedProfileInfo?.custom && (
                 <PanelSectionRow>
                   <ButtonItem layout="below" disabled={busy} onClick={() => void this.run(() => deleteCustomProfile(selectedProfile))}>
-                    Delete selected preset
+                    Delete Toolkit preset
                   </ButtonItem>
                 </PanelSectionRow>
               )}

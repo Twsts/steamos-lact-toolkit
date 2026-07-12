@@ -8,14 +8,15 @@ SteamOS and SteamOS-like DIY living-room PCs.
 - Read LACT status through `/run/lactd.sock`
 - Show GPU temperatures, voltage, power, clocks, fan, busy percent, and throttling
 - Show configured values versus currently applied driver values
+- List and apply profiles created in LACT Desktop mode
 - Adjust custom tuning from Decky:
   - power cap
   - voltage offset
   - VRAM max clock
   - Zero RPM
-- Save and delete named presets
+- Save and delete local Toolkit presets
 
-Custom presets are stored in:
+LACT profiles stay managed by LACT. Local Toolkit presets are stored in:
 
 ```text
 ~/.config/steamos-lact-toolkit/profiles.json
