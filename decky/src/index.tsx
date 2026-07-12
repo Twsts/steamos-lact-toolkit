@@ -528,9 +528,9 @@ class Content extends Component<Record<string, never>, ContentState> {
                 <DropdownItem
                   label="Mode"
                   rgOptions={[
-                    { data: "automatic", label: "Automatic" },
-                    { data: "static", label: "Static" },
-                    { data: "curve", label: "Curve" },
+                    { data: "automatic", label: "Automatic (GPU default)" },
+                    { data: "static", label: "Static speed" },
+                    { data: "curve", label: "LACT curve" },
                   ]}
                   selectedOption={fanEdit.mode}
                   disabled={busy}
@@ -567,7 +567,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                   disabled={busy || !fanDirty}
                   onClick={() => void this.run(() => applyFanControl({ ...fanEdit, static_speed: fanEdit.static_speed / 100 }), "fan")}
                 >
-                  Apply fan control
+                  Apply fan settings
                 </ButtonItem>
               </PanelSectionRow>
             </PanelSection>

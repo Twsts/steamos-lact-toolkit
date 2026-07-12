@@ -13,11 +13,11 @@ SteamOS and SteamOS-like DIY living-room PCs.
   - power cap
   - voltage offset
   - VRAM max clock
-  - Zero RPM
 - Adjust fan mode from Decky:
-  - Automatic
+  - Automatic (GPU default)
   - Static speed
-  - Existing LACT curve mode
+  - LACT curve mode
+  - Zero RPM
 - Preserve fan curves managed in LACT
 - Save and delete local Toolkit presets
 
