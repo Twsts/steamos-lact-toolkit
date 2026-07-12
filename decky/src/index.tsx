@@ -321,7 +321,6 @@ class Content extends Component<Record<string, never>, ContentState> {
   draftFromStatus(status: Status): GpuConfig {
     const config = status.config ?? status.desired ?? {};
     return {
-      fan_control_enabled: false,
       pmfw_options: { zero_rpm: config.pmfw_options?.zero_rpm ?? true },
       power_cap: config.power_cap ?? 0,
       performance_level: "auto",

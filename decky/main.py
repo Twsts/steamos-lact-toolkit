@@ -113,7 +113,6 @@ class Plugin:
 
     def _sanitize_config(self, config) -> dict:
         base = {
-            "fan_control_enabled": False,
             "pmfw_options": {"zero_rpm": True},
             "power_cap": 0.0,
             "performance_level": "auto",
@@ -127,7 +126,6 @@ class Plugin:
                     "performance_level": str(config.get("performance_level") or "auto"),
                     "max_memory_clock": int(max(0, min(int(config.get("max_memory_clock", base["max_memory_clock"])), 5000))),
                     "voltage_offset": int(max(-300, min(int(config.get("voltage_offset", base["voltage_offset"])), 300))),
-                    "fan_control_enabled": bool(config.get("fan_control_enabled", False)),
                 }
             )
             pmfw = dict(base.get("pmfw_options") or {})
@@ -361,9 +359,9 @@ class Plugin:
             safe_watts = max(0, min(int(watts), 1000))
             gpu_id = await self._selected_gpu_id()
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
-            config = self._sanitize_config(current)
-            config["power_cap"] = float(safe_watts)
-            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": config})
+            desired = self._sanitize_config(current)
+            desired["power_cap"] = float(safe_watts)
+            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
             await self._lact_request("confirm_pending_config", {"command": "confirm"})
             return await self.get_status()
         except Exception as exc:
