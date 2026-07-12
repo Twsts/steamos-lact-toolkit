@@ -268,6 +268,7 @@ type ContentState = {
   busy: boolean;
   dirty: boolean;
   fanDirty: boolean;
+  errorSticky: boolean;
   draft: GpuConfig | null;
   fanDraft: FanDraft | null;
   presetName: string;
@@ -286,6 +287,7 @@ class Content extends Component<Record<string, never>, ContentState> {
     busy: false,
     dirty: false,
     fanDirty: false,
+    errorSticky: false,
     draft: null,
     fanDraft: null,
     presetName: "Custom",
@@ -303,6 +305,7 @@ class Content extends Component<Record<string, never>, ContentState> {
   }
 
   refresh = async () => {
+    if (this.state.errorSticky) return;
     try {
       const status = await withTimeout(getStatus(), "get_status");
       this.setState((state) => ({
@@ -332,6 +335,7 @@ class Content extends Component<Record<string, never>, ContentState> {
           fanDraft: status.ok && clear !== "tuning" ? this.fanDraftFromStatus(status) : this.state.fanDraft,
           dirty: clear === "fan" ? this.state.dirty : false,
           fanDirty: clear === "tuning" ? this.state.fanDirty : false,
+          errorSticky: false,
         });
       } catch (error) {
         this.setState({
@@ -340,7 +344,12 @@ class Content extends Component<Record<string, never>, ContentState> {
             level: "error",
             error: error instanceof Error ? error.message : String(error),
           },
+          errorSticky: true,
         });
+        window.setTimeout(() => {
+          this.setState({ errorSticky: false });
+          void this.refresh();
+        }, 10000);
       }
     } finally {
       this.setState({ busy: false });
@@ -374,6 +383,7 @@ class Content extends Component<Record<string, never>, ContentState> {
   updateDraft = (patch: Partial<GpuConfig>) => {
     this.setState((state) => ({
       dirty: true,
+      errorSticky: false,
       draft: {
         ...(state.draft ?? this.draftFromStatus(state.status ?? { ok: false })),
         ...patch,
@@ -385,6 +395,7 @@ class Content extends Component<Record<string, never>, ContentState> {
   updateFanDraft = (patch: Partial<FanDraft>) => {
     this.setState((state) => ({
       fanDirty: true,
+      errorSticky: false,
       fanDraft: {
         ...(state.fanDraft ?? this.fanDraftFromStatus(state.status ?? { ok: false })),
         ...patch,
@@ -397,7 +408,7 @@ class Content extends Component<Record<string, never>, ContentState> {
       ...(this.state.fanDraft ?? this.fanDraftFromStatus(this.state.status ?? { ok: false })),
       ...patch,
     };
-    this.setState({ fanDraft: next, fanDirty: false });
+    this.setState({ fanDraft: next, fanDirty: false, errorSticky: false });
     void this.run(() => applyFanControl({ ...next, static_speed: next.static_speed / 100 }), "fan");
   };
 

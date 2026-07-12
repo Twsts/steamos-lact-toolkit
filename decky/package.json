@@ -1,6 +1,6 @@
 {
   "name": "steamos-lact-toolkit-decky",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Decky plugin for monitoring and tuning AMD GPU LACT settings on SteamOS",
   "type": "module",
   "scripts": {

@@ -366,6 +366,7 @@ class Plugin:
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
             stats = await self._lact_request("device_stats", {"id": gpu_id})
             await self._lact_request("set_fan_control", self._fan_control_args(gpu_id, current, stats, fan_config))
+            await self._lact_request("confirm_pending_config", {"command": "confirm"})
             return await self.get_status()
         except Exception as exc:
             decky.logger.exception("SteamOS LACT Toolkit fan control failed")
