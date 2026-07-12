@@ -392,6 +392,15 @@ class Content extends Component<Record<string, never>, ContentState> {
     }));
   };
 
+  applyFanDraft = (patch: Partial<FanDraft>) => {
+    const next = {
+      ...(this.state.fanDraft ?? this.fanDraftFromStatus(this.state.status ?? { ok: false })),
+      ...patch,
+    };
+    this.setState({ fanDraft: next, fanDirty: false });
+    void this.run(() => applyFanControl({ ...next, static_speed: next.static_speed / 100 }), "fan");
+  };
+
   render() {
     const { status, busy, dirty, fanDirty, draft, fanDraft, presetName } = this.state;
     const profiles = status?.profiles ?? [];
@@ -525,7 +534,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                   ]}
                   selectedOption={fanEdit.mode}
                   disabled={busy}
-                  onChange={(entry) => this.updateFanDraft({ mode: String(entry.data) as FanMode })}
+                  onChange={(entry) => this.applyFanDraft({ mode: String(entry.data) as FanMode })}
                 />
               </PanelSectionRow>
               {fanEdit.mode === "static" && (
