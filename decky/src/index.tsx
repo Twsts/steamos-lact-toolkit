@@ -144,9 +144,17 @@ function StatusCard({ status }: { status: Status | null }) {
 
   if (status?.ok) {
     if (status.profile_ok && status.overdrive_ok) {
-      detail = status.applied_ok
-        ? "Selected profile matches the driver runtime values."
-        : "Selected profile is saved, but runtime values do not match.";
+      if (status.applied_ok) {
+        detail =
+          status.current_profile && status.current_profile !== "custom"
+            ? "Selected Toolkit preset matches the driver runtime values."
+            : "Current LACT config matches the driver runtime values.";
+      } else {
+        detail =
+          status.current_profile && status.current_profile !== "custom"
+            ? "Selected Toolkit preset is saved, but runtime values do not match."
+            : "Current LACT config is saved, but runtime values do not match.";
+      }
     } else if (!status.profile_ok) {
       detail = "Saved LACT values do not match any saved preset.";
     } else if (!status.overdrive_ok) {
@@ -210,7 +218,7 @@ function VerificationGrid({ status }: { status: Status }) {
   return (
     <div style={{ display: "grid", gap: "4px" }}>
       <KV label="Overdrive" value={status.overdrive_ok ? "Active" : "Inactive"} />
-      <KV label="Profile" value={status.current_profile ?? (status.profile_ok ? "Configured" : "Mismatch")} />
+      <KV label="Toolkit preset" value={status.current_profile === "custom" ? "Current LACT config" : status.current_profile ?? "n/a"} />
       <KV label="Applied" value={status.applied_ok ? "Verified" : "Mismatch"} />
       <KV label="Power cap" value={`${config.power_cap ?? "n/a"} -> ${applied.power_cap ?? "n/a"} W (target ${desired.power_cap ?? "n/a"})`} />
       <KV label="Undervolt" value={`${config.voltage_offset ?? "n/a"} -> ${applied.voltage_offset ?? "n/a"} mV (target ${desired.voltage_offset ?? "n/a"})`} />
@@ -326,7 +334,7 @@ class Content extends Component<Record<string, never>, ContentState> {
     const profileOptions = profiles.length ? profiles.map((profile) => ({
       data: profile.id,
       label: `${profile.name} ${profile.power_cap} W / ${profile.voltage_offset} mV`,
-    })) : [{ data: "__current", label: "Current unsaved values" }];
+    })) : [{ data: "__current", label: "Current LACT config" }];
     const selectedProfile = status?.current_profile && status.current_profile !== "custom" ? status.current_profile : "__current";
     const selectedProfileInfo = profiles.find((profile) => profile.id === selectedProfile);
     const edit = draft ?? this.draftFromStatus(status ?? { ok: false });
@@ -359,7 +367,7 @@ class Content extends Component<Record<string, never>, ContentState> {
               </PanelSectionRow>
               <PanelSectionRow>
                 <DropdownItem
-                  label="Profile"
+                  label="Toolkit preset"
                   rgOptions={profileOptions}
                   selectedOption={selectedProfile}
                   disabled={busy}

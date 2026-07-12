@@ -194,7 +194,7 @@ class Plugin:
             elif not applied_ok:
                 title = "Runtime mismatch"
             elif not current_profile:
-                title = "Unsaved preset"
+                title = "Current LACT config"
             else:
                 title = "Ready"
 
