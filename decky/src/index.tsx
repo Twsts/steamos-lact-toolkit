@@ -47,8 +47,14 @@ type Status = {
     fan?: {
       control_enabled?: boolean;
       control_mode?: string;
+      static_speed?: number;
+      curve?: Record<string, number>;
       speed_current?: number;
       pwm_current?: number;
+      speed_max?: number;
+      speed_min?: number;
+      pwm_max?: number;
+      pwm_min?: number;
     };
     busy_percent?: number;
     performance_level?: string;
@@ -69,6 +75,11 @@ type Status = {
 
 type GpuConfig = {
   fan_control_enabled?: boolean;
+  fan_control_settings?: {
+    mode?: string;
+    static_speed?: number;
+    curve?: Record<string, number>;
+  };
   pmfw_options?: {
     zero_rpm?: boolean;
   };
@@ -94,9 +105,18 @@ type NumericRange = {
   default?: number;
 };
 
+type FanMode = "automatic" | "static" | "curve";
+
+type FanDraft = {
+  mode: FanMode;
+  static_speed: number;
+  zero_rpm: boolean;
+};
+
 const getStatus = callable<[], Status>("get_status");
 const applyProfile = callable<[string], Status>("apply_profile");
 const applyCustomConfig = callable<[GpuConfig], Status>("apply_custom_config");
+const applyFanControl = callable<[FanDraft], Status>("apply_fan_control");
 const saveCustomProfile = callable<[string, GpuConfig], Status>("save_custom_profile");
 const deleteCustomProfile = callable<[string], Status>("delete_custom_profile");
 
@@ -206,6 +226,8 @@ function MetricGrid({ status }: { status: Status }) {
   const temps = status.stats?.temps ?? {};
   const throttle = status.stats?.throttle_info ?? {};
   const throttleText = Object.keys(throttle).length ? Object.keys(throttle).join(", ") : "No";
+  const fan = status.stats?.fan ?? {};
+  const fanMode = fan.control_enabled ? fan.control_mode ?? "manual" : "auto";
 
   return (
     <div style={{ display: "grid", gap: "4px" }}>
@@ -213,7 +235,7 @@ function MetricGrid({ status }: { status: Status }) {
       <KV label="Memory / VRM" value={`${fmt(tempValue(temps.mem), " C")} / ${fmt(tempValue(temps.vrmem), " C")}`} />
       <KV label="GPU" value={`${fmt(status.stats?.clockspeed?.gpu_clockspeed, " MHz")} / ${fmt(status.stats?.voltage?.gpu, " mV")}`} />
       <KV label="Power" value={`${fmt(status.stats?.power?.average, " W")} / cap ${fmt(status.stats?.power?.cap_current, " W")}`} />
-      <KV label="Fan" value={`${fmt(status.stats?.fan?.speed_current, " RPM")} (${status.stats?.fan?.control_enabled ? "manual" : "auto"})`} />
+      <KV label="Fan" value={`${fmt(fan.speed_current, " RPM")} (${fanMode})`} />
       <KV label="Busy / Throttle" value={`${fmt(status.stats?.busy_percent, "%")} / ${throttleText}`} />
     </div>
   );
@@ -245,7 +267,9 @@ type ContentState = {
   status: Status | null;
   busy: boolean;
   dirty: boolean;
+  fanDirty: boolean;
   draft: GpuConfig | null;
+  fanDraft: FanDraft | null;
   presetName: string;
 };
 
@@ -261,7 +285,9 @@ class Content extends Component<Record<string, never>, ContentState> {
     },
     busy: false,
     dirty: false,
+    fanDirty: false,
     draft: null,
+    fanDraft: null,
     presetName: "Custom",
   };
 
@@ -282,6 +308,7 @@ class Content extends Component<Record<string, never>, ContentState> {
       this.setState((state) => ({
         status,
         draft: !state.dirty && status.ok ? this.draftFromStatus(status) : state.draft,
+        fanDraft: !state.fanDirty && status.ok ? this.fanDraftFromStatus(status) : state.fanDraft,
       }));
     } catch (error) {
       this.setState({
@@ -294,15 +321,17 @@ class Content extends Component<Record<string, never>, ContentState> {
     }
   };
 
-  run = async (action: () => Promise<Status>) => {
+  run = async (action: () => Promise<Status>, clear: "all" | "tuning" | "fan" = "all") => {
     this.setState({ busy: true });
     try {
       try {
         const status = await withTimeout(action(), "action");
         this.setState({
           status,
-          draft: status.ok ? this.draftFromStatus(status) : this.state.draft,
-          dirty: false,
+          draft: status.ok && clear !== "fan" ? this.draftFromStatus(status) : this.state.draft,
+          fanDraft: status.ok && clear !== "tuning" ? this.fanDraftFromStatus(status) : this.state.fanDraft,
+          dirty: clear === "fan" ? this.state.dirty : false,
+          fanDirty: clear === "tuning" ? this.state.fanDirty : false,
         });
       } catch (error) {
         this.setState({
@@ -329,6 +358,19 @@ class Content extends Component<Record<string, never>, ContentState> {
     };
   }
 
+  fanDraftFromStatus(status: Status): FanDraft {
+    const config = status.config ?? {};
+    const fan = status.stats?.fan ?? {};
+    const enabled = config.fan_control_enabled ?? fan.control_enabled ?? false;
+    const mode = enabled ? String(config.fan_control_settings?.mode ?? fan.control_mode ?? "static") : "automatic";
+    const staticSpeed = config.fan_control_settings?.static_speed ?? fan.static_speed ?? 0.5;
+    return {
+      mode: mode === "curve" ? "curve" : mode === "static" ? "static" : "automatic",
+      static_speed: Math.round(Math.max(0, Math.min(staticSpeed, 1)) * 100),
+      zero_rpm: config.pmfw_options?.zero_rpm ?? true,
+    };
+  }
+
   updateDraft = (patch: Partial<GpuConfig>) => {
     this.setState((state) => ({
       dirty: true,
@@ -340,8 +382,18 @@ class Content extends Component<Record<string, never>, ContentState> {
     }));
   };
 
+  updateFanDraft = (patch: Partial<FanDraft>) => {
+    this.setState((state) => ({
+      fanDirty: true,
+      fanDraft: {
+        ...(state.fanDraft ?? this.fanDraftFromStatus(state.status ?? { ok: false })),
+        ...patch,
+      },
+    }));
+  };
+
   render() {
-    const { status, busy, dirty, draft, presetName } = this.state;
+    const { status, busy, dirty, fanDirty, draft, fanDraft, presetName } = this.state;
     const profiles = status?.profiles ?? [];
     const profileOptions = [{ data: "__current", label: "Current LACT config" }, ...profiles.map((profile) => ({
       data: profile.id,
@@ -350,6 +402,7 @@ class Content extends Component<Record<string, never>, ContentState> {
     const selectedProfile = status?.current_profile && status.current_profile !== "custom" ? status.current_profile : "__current";
     const selectedProfileInfo = profiles.find((profile) => profile.id === selectedProfile);
     const edit = draft ?? this.draftFromStatus(status ?? { ok: false });
+    const fanEdit = fanDraft ?? this.fanDraftFromStatus(status ?? { ok: false });
     const powerMin = rangeMin(status?.limits?.power_cap, status?.stats?.power?.cap_min ?? 0);
     const powerMax = rangeMax(status?.limits?.power_cap, status?.stats?.power?.cap_max ?? Math.max(edit.power_cap ?? 0, 1));
     const memoryMin = rangeMin(status?.limits?.max_memory_clock, 0);
@@ -442,15 +495,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                 />
               </PanelSectionRow>
               <PanelSectionRow>
-                <ToggleField
-                  label="Zero RPM"
-                  checked={edit.pmfw_options?.zero_rpm ?? true}
-                  disabled={busy}
-                  onChange={(checked) => this.updateDraft({ pmfw_options: { zero_rpm: checked } })}
-                />
-              </PanelSectionRow>
-              <PanelSectionRow>
-                <ButtonItem layout="below" disabled={busy || !dirty} onClick={() => void this.run(() => applyCustomConfig(edit))}>
+                <ButtonItem layout="below" disabled={busy || !dirty} onClick={() => void this.run(() => applyCustomConfig(edit), "tuning")}>
                   Apply custom
                 </ButtonItem>
               </PanelSectionRow>
@@ -465,6 +510,55 @@ class Content extends Component<Record<string, never>, ContentState> {
               <PanelSectionRow>
                 <ButtonItem layout="below" disabled={busy} onClick={() => void this.run(() => saveCustomProfile(presetName, edit))}>
                   Save preset
+                </ButtonItem>
+              </PanelSectionRow>
+            </PanelSection>
+
+            <PanelSection title="Fan Control">
+              <PanelSectionRow>
+                <DropdownItem
+                  label="Mode"
+                  rgOptions={[
+                    { data: "automatic", label: "Automatic" },
+                    { data: "static", label: "Static" },
+                    { data: "curve", label: "Curve" },
+                  ]}
+                  selectedOption={fanEdit.mode}
+                  disabled={busy}
+                  onChange={(entry) => this.updateFanDraft({ mode: String(entry.data) as FanMode })}
+                />
+              </PanelSectionRow>
+              {fanEdit.mode === "static" && (
+                <PanelSectionRow>
+                  <SliderField
+                    label="Static fan speed"
+                    value={fanEdit.static_speed}
+                    min={0}
+                    max={100}
+                    step={1}
+                    showValue
+                    editableValue
+                    valueSuffix="%"
+                    disabled={busy}
+                    onChange={(value) => this.updateFanDraft({ static_speed: value })}
+                  />
+                </PanelSectionRow>
+              )}
+              <PanelSectionRow>
+                <ToggleField
+                  label="Zero RPM"
+                  checked={fanEdit.zero_rpm}
+                  disabled={busy}
+                  onChange={(checked) => this.updateFanDraft({ zero_rpm: checked })}
+                />
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  disabled={busy || !fanDirty}
+                  onClick={() => void this.run(() => applyFanControl({ ...fanEdit, static_speed: fanEdit.static_speed / 100 }), "fan")}
+                >
+                  Apply fan control
                 </ButtonItem>
               </PanelSectionRow>
             </PanelSection>

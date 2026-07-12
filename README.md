@@ -23,7 +23,7 @@ The Decky plugin talks to LACT through `/run/lactd.sock`. It prefers a dedicated
 LACT GPU device when one is available, displays live telemetry, compares saved
 LACT configuration with runtime driver values, and lets the user apply LACT
 profiles made in Desktop mode. It can also save local Toolkit presets for quick
-Gaming Mode snapshots.
+Gaming Mode snapshots and adjust basic fan control through LACT.
 
 The persistence helper preserves LACT and AMD overdrive files across SteamOS
 atomic updates and warns when a reboot is required before voltage offset tuning

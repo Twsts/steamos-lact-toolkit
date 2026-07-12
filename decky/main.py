@@ -141,6 +141,41 @@ class Plugin:
         merged["pmfw_options"] = pmfw
         return merged
 
+    def _fan_control_args(self, gpu_id: str, current: dict, stats: dict, fan_config: dict) -> dict:
+        current = current or {}
+        stats = stats or {}
+        fan_config = fan_config or {}
+        settings = current.get("fan_control_settings") or {}
+        fan_stats = stats.get("fan") or {}
+
+        requested_mode = str(fan_config.get("mode") or settings.get("mode") or fan_stats.get("control_mode") or "static").lower()
+        enabled = False if requested_mode == "automatic" else bool(fan_config.get("enabled", True))
+        mode = requested_mode if requested_mode in ("static", "curve") else "static"
+
+        raw_static_speed = fan_config.get("static_speed", settings.get("static_speed", fan_stats.get("static_speed", 0.5)))
+        if raw_static_speed is None:
+            raw_static_speed = 0.5
+        static_speed = max(0.0, min(float(raw_static_speed), 1.0))
+        zero_rpm = bool(fan_config.get("zero_rpm", (current.get("pmfw_options") or {}).get("zero_rpm", True)))
+
+        args = {
+            "id": gpu_id,
+            "enabled": enabled,
+            "pmfw": {"zero_rpm": zero_rpm},
+        }
+        if enabled:
+            args["mode"] = mode
+            if mode == "static":
+                args["static_speed"] = static_speed
+            else:
+                curve = settings.get("curve") or fan_stats.get("curve")
+                if curve:
+                    args["curve"] = curve
+                for key in ("spindown_delay_ms", "change_threshold"):
+                    if settings.get(key) is not None:
+                        args[key] = settings[key]
+        return args
+
     def _config_matches(self, config, desired) -> bool:
         if not isinstance(config, dict):
             return False
@@ -323,6 +358,17 @@ class Plugin:
             return await self.get_status()
         except Exception as exc:
             decky.logger.exception("SteamOS LACT Toolkit custom apply failed")
+            return {"ok": False, "level": "error", "error": str(exc)}
+
+    async def apply_fan_control(self, fan_config: dict) -> dict:
+        try:
+            gpu_id = await self._selected_gpu_id()
+            current = await self._lact_request("get_gpu_config", {"id": gpu_id})
+            stats = await self._lact_request("device_stats", {"id": gpu_id})
+            await self._lact_request("set_fan_control", self._fan_control_args(gpu_id, current, stats, fan_config))
+            return await self.get_status()
+        except Exception as exc:
+            decky.logger.exception("SteamOS LACT Toolkit fan control failed")
             return {"ok": False, "level": "error", "error": str(exc)}
 
     async def save_custom_profile(self, name: str, config: dict) -> dict:

@@ -14,7 +14,11 @@ SteamOS and SteamOS-like DIY living-room PCs.
   - voltage offset
   - VRAM max clock
   - Zero RPM
-- Preserve fan mode and fan curves managed in LACT
+- Adjust fan mode from Decky:
+  - Automatic
+  - Static speed
+  - Existing LACT curve mode
+- Preserve fan curves managed in LACT
 - Save and delete local Toolkit presets
 
 LACT profiles stay managed by LACT. Local Toolkit presets are stored in:
