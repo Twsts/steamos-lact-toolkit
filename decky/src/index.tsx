@@ -1,6 +1,6 @@
 import { callable, definePlugin } from "@decky/api";
-import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ScrollPanel, ScrollPanelGroup, SliderField, TextField, ToggleField } from "@decky/ui";
-import { Component } from "react";
+import { ButtonItem, DropdownItem, Focusable, PanelSection, PanelSectionRow, SliderField, TextField, ToggleField } from "@decky/ui";
+import { Component, type ReactNode } from "react";
 import { FaMicrochip } from "react-icons/fa";
 
 type Level = "ok" | "warn" | "error" | "checking";
@@ -210,6 +210,14 @@ function StatusCard({ status }: { status: Status | null }) {
         <div style={{ fontSize: "12px", opacity: 0.78, lineHeight: 1.35 }}>{detail}</div>
       </div>
     </div>
+  );
+}
+
+function FocusStop({ children }: { children: ReactNode }) {
+  return (
+    <Focusable flow-children="none" style={{ display: "block", width: "100%" }}>
+      {children}
+    </Focusable>
   );
 }
 
@@ -431,11 +439,12 @@ class Content extends Component<Record<string, never>, ContentState> {
     const voltageMax = rangeMax(status?.limits?.voltage_offset, 0);
 
     return (
-      <ScrollPanelGroup>
-        <ScrollPanel>
+      <>
         <PanelSection title="Status">
           <PanelSectionRow>
-            <StatusCard status={status} />
+            <FocusStop>
+              <StatusCard status={status} />
+            </FocusStop>
           </PanelSectionRow>
         </PanelSection>
 
@@ -443,13 +452,17 @@ class Content extends Component<Record<string, never>, ContentState> {
           <>
             <PanelSection title="Live GPU">
               <PanelSectionRow>
-                <MetricGrid status={status} />
+                <FocusStop>
+                  <MetricGrid status={status} />
+                </FocusStop>
               </PanelSectionRow>
             </PanelSection>
 
             <PanelSection title="Verification">
               <PanelSectionRow>
-                <VerificationGrid status={status} />
+                <FocusStop>
+                  <VerificationGrid status={status} />
+                </FocusStop>
               </PanelSectionRow>
               <PanelSectionRow>
                 <DropdownItem
@@ -585,8 +598,7 @@ class Content extends Component<Record<string, never>, ContentState> {
             </PanelSection>
           </>
         )}
-        </ScrollPanel>
-      </ScrollPanelGroup>
+      </>
     );
   }
 }
