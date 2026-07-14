@@ -1,5 +1,5 @@
 import { callable, definePlugin } from "@decky/api";
-import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, SliderField, TextField, ToggleField } from "@decky/ui";
+import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ScrollPanel, ScrollPanelGroup, SliderField, TextField, ToggleField } from "@decky/ui";
 import { Component } from "react";
 import { FaMicrochip } from "react-icons/fa";
 
@@ -431,7 +431,8 @@ class Content extends Component<Record<string, never>, ContentState> {
     const voltageMax = rangeMax(status?.limits?.voltage_offset, 0);
 
     return (
-      <>
+      <ScrollPanelGroup>
+        <ScrollPanel>
         <PanelSection title="Status">
           <PanelSectionRow>
             <StatusCard status={status} />
@@ -584,7 +585,8 @@ class Content extends Component<Record<string, never>, ContentState> {
             </PanelSection>
           </>
         )}
-      </>
+        </ScrollPanel>
+      </ScrollPanelGroup>
     );
   }
 }
