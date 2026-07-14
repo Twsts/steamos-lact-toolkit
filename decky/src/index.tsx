@@ -1,5 +1,5 @@
 import { callable, definePlugin } from "@decky/api";
-import { ButtonItem, DropdownItem, Focusable, PanelSection, PanelSectionRow, SliderField, TextField, ToggleField } from "@decky/ui";
+import { ButtonItem, DropdownItem, Field, PanelSection, PanelSectionRow, SliderField, TextField, ToggleField } from "@decky/ui";
 import { Component, type ReactNode } from "react";
 import { FaMicrochip } from "react-icons/fa";
 
@@ -215,9 +215,9 @@ function StatusCard({ status }: { status: Status | null }) {
 
 function FocusStop({ children }: { children: ReactNode }) {
   return (
-    <Focusable flow-children="none" style={{ display: "block", width: "100%" }}>
+    <Field focusable highlightOnFocus bottomSeparator="none" padding="none" childrenLayout="below">
       {children}
-    </Focusable>
+    </Field>
   );
 }
 
