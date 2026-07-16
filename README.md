@@ -56,7 +56,9 @@ curl -fsSL https://raw.githubusercontent.com/Twsts/steamos-lact-toolkit/master/i
 ```
 
 The installer downloads the latest release bundle, installs the Decky plugin,
-installs the SteamOS persistence helper, and restarts Decky Loader.
+checks the LACT daemon setup, installs the SteamOS persistence helper, and
+restarts Decky Loader. If LACT or `lactd` is missing, it can guide the user
+through installing the LACT Flatpak and enabling its system daemon.
 
 Manual build/install is also possible from `decky/`.
 
