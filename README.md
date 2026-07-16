@@ -36,6 +36,11 @@ can apply again.
 - LACT installed and `lactd` running
 - Decky Loader for the plugin
 
+The LACT Flatpak can work as long as its system daemon setup has been completed
+and `/run/lactd.sock` is available. Running the Flatpak GUI in sandbox-only
+monitoring mode is not enough for this plugin because tuning requires the root
+`lactd` service.
+
 ## Safety
 
 GPU tuning can cause crashes, visual corruption, or reboots if values are too

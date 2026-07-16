@@ -217,6 +217,9 @@ class Plugin:
         except FileNotFoundError:
             return ""
 
+    def _as_dict(self, value) -> dict:
+        return value if isinstance(value, dict) else {}
+
     async def get_status(self) -> dict:
         try:
             decky.logger.info("SteamOS LACT Toolkit get_status start")
@@ -229,12 +232,12 @@ class Plugin:
                 return {"ok": False, "level": "error", "error": "No LACT GPU device found", "devices": devices}
             gpu_id = gpu["id"]
 
-            system_info = await self._lact_request("system_info")
+            system_info = self._as_dict(await self._lact_request("system_info"))
             lact_profile_state = await self._list_lact_profiles()
             lact_profiles = lact_profile_state.get("profiles") or {}
-            config = await self._lact_request("get_gpu_config", {"id": gpu_id})
-            stats = await self._lact_request("device_stats", {"id": gpu_id})
-            clocks_info = await self._lact_request("device_clocks_info", {"id": gpu_id})
+            config = self._as_dict(await self._lact_request("get_gpu_config", {"id": gpu_id}))
+            stats = self._as_dict(await self._lact_request("device_stats", {"id": gpu_id}))
+            clocks_info = self._as_dict(await self._lact_request("device_clocks_info", {"id": gpu_id}))
 
             current_profile = self._detect_profile(config, lact_profiles, gpu_id)
             desired = self._config_for_profile_id(current_profile, lact_profiles, gpu_id) if current_profile else self._sanitize_config(config)
@@ -293,6 +296,8 @@ class Plugin:
             return {"ok": False, "level": "error", "error": str(exc)}
 
     def _applied_values(self, stats: dict, clocks_info: dict) -> dict:
+        stats = self._as_dict(stats)
+        clocks_info = self._as_dict(clocks_info)
         table = ((clocks_info or {}).get("table") or {}).get("value") or {}
         data = table.get("data") or {}
         mclk_range = data.get("current_mclk_range") or {}
@@ -307,6 +312,8 @@ class Plugin:
         }
 
     def _limits(self, stats: dict, clocks_info: dict) -> dict:
+        stats = self._as_dict(stats)
+        clocks_info = self._as_dict(clocks_info)
         table = ((clocks_info or {}).get("table") or {}).get("value") or {}
         data = table.get("data") or {}
         od_range = data.get("od_range") or {}
