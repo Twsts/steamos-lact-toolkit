@@ -252,12 +252,13 @@ check_decky_plugin_health() {
   logs="$(as_root journalctl -u plugin_loader.service --since "$since" --no-pager -o cat 2>/dev/null || true)"
 
   if grep -Eq "SteamOS LACT Toolkit plugin loaded|Loaded SteamOS LACT Toolkit" <<<"$logs"; then
-    echo "Decky plugin OK: SteamOS LACT Toolkit loaded."
+    echo "Decky backend OK: SteamOS LACT Toolkit loaded."
   else
-    echo "WARNING: Decky is running, but SteamOS LACT Toolkit was not seen in the plugin log." >&2
-    echo "If it does not appear in Gaming Mode, restart Steam or reboot." >&2
+    echo "NOTE: SteamOS LACT Toolkit was not seen in the Decky log yet." >&2
+    echo "This can be normal when installing from Desktop Mode before returning to Gaming Mode." >&2
+    echo "Return to Gaming Mode, then open Decky. If the plugin is missing, restart Steam or reboot." >&2
     echo "Debug log: journalctl -u plugin_loader.service -n 180 --no-pager -o cat" >&2
-    return 1
+    return 0
   fi
 
   if grep -Eiq "SteamOS LACT Toolkit .*failed|NoneType|address already in use|Failed to start SteamDeck Plugin Loader" <<<"$logs"; then
@@ -317,3 +318,4 @@ as_root systemctl start plugin_loader.service
 check_decky_plugin_health "$decky_restart_since" || true
 
 echo "SteamOS LACT Toolkit installed."
+echo "If you installed from Desktop Mode, return to Gaming Mode to use the Decky plugin UI."
