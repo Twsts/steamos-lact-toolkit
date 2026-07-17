@@ -17,8 +17,9 @@ It preserves:
 
 ```bash
 sudo ./install.sh
-sudo systemctl start steamos-lact-restore.service
 ```
+
+The installer enables the timer and runs the restore check once immediately.
 
 If the service has to restore the kernel option, it regenerates initramfs with
 `mkinitcpio -P` and writes:

@@ -29,5 +29,11 @@ install -D -m 0644 "${SCRIPT_DIR}/steamos-lact-restore.timer" /etc/systemd/syste
 systemctl daemon-reload
 systemctl enable --now steamos-lact-restore.timer
 
+if systemctl start steamos-lact-restore.service; then
+  echo "Ran SteamOS LACT Toolkit persistence check."
+else
+  echo "WARNING: SteamOS LACT Toolkit persistence check failed." >&2
+  echo "Check with: sudo systemctl status steamos-lact-restore.service --no-pager" >&2
+fi
+
 echo "Installed SteamOS LACT Toolkit persistence."
-echo "Run now with: sudo systemctl start steamos-lact-restore.service"

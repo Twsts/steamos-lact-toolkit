@@ -72,7 +72,6 @@ Install the SteamOS persistence helper from `persistence/`:
 ```bash
 cd persistence
 sudo ./install.sh
-sudo systemctl start steamos-lact-restore.service
 ```
 
 See the README in each subdirectory for details.
