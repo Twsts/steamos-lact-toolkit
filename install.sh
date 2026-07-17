@@ -129,6 +129,17 @@ lactd_unit_exists() {
   systemctl list-unit-files lactd.service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx lactd.service
 }
 
+wait_for_lact_socket() {
+  local i
+  for i in {1..10}; do
+    if [[ -S /run/lactd.sock ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 flatpak_lact_install_path() {
   local user_path="${DECK_HOME}/.local/share/flatpak/app/${LACT_FLATPAK_ID}/x86_64/stable/active/files/bin/daemon.sh"
   local system_path="/var/lib/flatpak/app/${LACT_FLATPAK_ID}/x86_64/stable/active/files/bin/daemon.sh"
@@ -216,12 +227,43 @@ check_lact_setup() {
     fi
   fi
 
-  if [[ -S /run/lactd.sock ]]; then
+  if wait_for_lact_socket; then
     echo "LACT socket OK: /run/lactd.sock"
   else
     echo "WARNING: /run/lactd.sock is missing."
     echo "The plugin can install, but it will not work until lactd is running."
     echo "Check with: systemctl status lactd --no-pager"
+  fi
+}
+
+check_decky_plugin_health() {
+  local since="$1"
+  local logs
+
+  echo "Checking Decky plugin startup..."
+  sleep 5
+
+  if ! systemctl is-active --quiet plugin_loader.service; then
+    echo "WARNING: plugin_loader.service is not active after install." >&2
+    echo "Check with: systemctl status plugin_loader.service --no-pager -l" >&2
+    return 1
+  fi
+
+  logs="$(as_root journalctl -u plugin_loader.service --since "$since" --no-pager -o cat 2>/dev/null || true)"
+
+  if grep -Eq "SteamOS LACT Toolkit plugin loaded|Loaded SteamOS LACT Toolkit" <<<"$logs"; then
+    echo "Decky plugin OK: SteamOS LACT Toolkit loaded."
+  else
+    echo "WARNING: Decky is running, but SteamOS LACT Toolkit was not seen in the plugin log." >&2
+    echo "If it does not appear in Gaming Mode, restart Steam or reboot." >&2
+    echo "Debug log: journalctl -u plugin_loader.service -n 180 --no-pager -o cat" >&2
+    return 1
+  fi
+
+  if grep -Eiq "SteamOS LACT Toolkit .*failed|NoneType|address already in use|Failed to start SteamDeck Plugin Loader" <<<"$logs"; then
+    echo "WARNING: Decky log contains errors after install." >&2
+    echo "Debug log: journalctl -u plugin_loader.service -n 180 --no-pager -o cat" >&2
+    return 1
   fi
 }
 
@@ -259,6 +301,7 @@ if [[ ! -d "${tmp}/steamos-lact-toolkit/decky" ]]; then
   exit 1
 fi
 
+decky_restart_since="$(date '+%Y-%m-%d %H:%M:%S')"
 as_root systemctl stop plugin_loader.service 2>/dev/null || true
 as_root rm -rf "$PLUGIN_DIR"
 as_root install -d -o "$DECK_USER" -g "$DECK_GROUP" "$PLUGIN_DIR"
@@ -270,5 +313,7 @@ as_root "${tmp}/steamos-lact-toolkit/persistence/install.sh"
 
 as_root systemctl reset-failed plugin_loader.service 2>/dev/null || true
 as_root systemctl start plugin_loader.service
+
+check_decky_plugin_health "$decky_restart_since" || true
 
 echo "SteamOS LACT Toolkit installed."
