@@ -46,6 +46,8 @@ class Plugin:
 
         if response is None:
             response = json.loads(b"".join(chunks).decode("utf-8"))
+        if not isinstance(response, dict):
+            raise RuntimeError(f"{command} returned invalid response: {type(response).__name__}")
         if response.get("status") != "ok":
             raise RuntimeError(f"{command} failed: {response.get('data')}")
         return response.get("data")
@@ -57,20 +59,25 @@ class Plugin:
         raise ValueError(f"Unknown profile: {profile_id}")
 
     def _profile_summaries(self, lact_profiles: dict | None, gpu_id: str) -> list[dict]:
-        profiles = [
-            {
-                "id": f"lact:{name}",
-                "name": name,
-                "source": "lact",
-                "power_cap": config.get("power_cap"),
-                "voltage_offset": config.get("voltage_offset"),
-                "max_memory_clock": config.get("max_memory_clock"),
-                "custom": False,
-            }
-            for name, profile in (lact_profiles or {}).items()
-            for config in [(profile.get("gpus") or {}).get(gpu_id)]
-            if isinstance(profile, dict) and isinstance(config, dict)
-        ]
+        profiles = []
+        for name, profile in (lact_profiles or {}).items():
+            if not isinstance(profile, dict):
+                decky.logger.warning("Skipping invalid LACT profile %r: %s", name, type(profile).__name__)
+                continue
+            config = (profile.get("gpus") or {}).get(gpu_id)
+            if not isinstance(config, dict):
+                continue
+            profiles.append(
+                {
+                    "id": f"lact:{name}",
+                    "name": name,
+                    "source": "lact",
+                    "power_cap": config.get("power_cap"),
+                    "voltage_offset": config.get("voltage_offset"),
+                    "max_memory_clock": config.get("max_memory_clock"),
+                    "custom": False,
+                }
+            )
         profiles.extend(
             {
                 "id": custom["id"],
@@ -203,6 +210,7 @@ class Plugin:
     def _select_gpu(self, devices: list[dict]) -> dict | None:
         if not isinstance(devices, list):
             return None
+        devices = [device for device in devices if isinstance(device, dict)]
         dedicated = next((device for device in devices if device.get("id") and device.get("device_type") == "Dedicated"), None)
         if dedicated:
             return dedicated
