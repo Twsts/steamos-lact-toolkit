@@ -4,7 +4,17 @@ set -euo pipefail
 REPO="Twsts/steamos-lact-toolkit"
 ASSET="steamos-lact-toolkit.zip"
 PLUGIN_NAME="steamos-lact-toolkit"
-DECK_HOME="${DECK_HOME:-/home/deck}"
+if [[ -z "${DECK_HOME:-}" ]]; then
+  if [[ -d /home/deck ]]; then
+    DECK_HOME="/home/deck"
+  elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    DECK_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+  else
+    DECK_HOME="${HOME}"
+  fi
+fi
+DECK_USER="${DECK_USER:-$(basename "$DECK_HOME")}"
+DECK_GROUP="${DECK_GROUP:-$(id -gn "$DECK_USER" 2>/dev/null || echo "$DECK_USER")}"
 PLUGIN_DIR="${DECK_HOME}/homebrew/plugins/${PLUGIN_NAME}"
 LACT_FLATPAK_ID="io.github.ilya_zlobintsev.LACT"
 ASSUME_YES="${STEAMOS_LACT_ASSUME_YES:-0}"
@@ -21,6 +31,42 @@ as_root() {
     "$@"
   else
     sudo "$@"
+  fi
+}
+
+as_deck_user() {
+  if [[ "$(id -un)" == "$DECK_USER" ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -u "$DECK_USER" "$@"
+  elif command -v runuser >/dev/null 2>&1; then
+    runuser -u "$DECK_USER" -- "$@"
+  else
+    echo "Cannot run command as ${DECK_USER}; sudo or runuser is required." >&2
+    exit 1
+  fi
+}
+
+check_sudo_access() {
+  if [[ "$(id -u)" == "0" ]]; then
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This installer needs sudo/root access, but sudo was not found." >&2
+    exit 1
+  fi
+  if ! sudo -v; then
+    cat >&2 <<'EOF'
+This installer needs sudo/root access to install Decky plugin files, services,
+and LACT daemon helpers.
+
+On SteamOS Desktop Mode, set a password for the current user first:
+
+  passwd
+
+Then run the installer again.
+EOF
+    exit 1
   fi
 }
 
@@ -74,7 +120,7 @@ with_writable_root() {
 
 flatpak_has_lact() {
   command -v flatpak >/dev/null 2>&1 && (
-    flatpak info --user "$LACT_FLATPAK_ID" >/dev/null 2>&1 ||
+    as_deck_user flatpak info --user "$LACT_FLATPAK_ID" >/dev/null 2>&1 ||
     flatpak info --system "$LACT_FLATPAK_ID" >/dev/null 2>&1
   )
 }
@@ -95,12 +141,12 @@ flatpak_lact_install_path() {
 
 install_lact_flatpak() {
   need_cmd flatpak
-  if ! sudo -u deck flatpak remote-list 2>/dev/null | awk '{print $1}' | grep -qx flathub; then
-    echo "Adding Flathub remote for the deck user."
-    sudo -u deck flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+  if ! as_deck_user flatpak remote-list 2>/dev/null | awk '{print $1}' | grep -qx flathub; then
+    echo "Adding Flathub remote for the ${DECK_USER} user."
+    as_deck_user flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
   fi
-  echo "Installing LACT Flatpak for the deck user."
-  sudo -u deck flatpak install --user -y flathub "$LACT_FLATPAK_ID"
+  echo "Installing LACT Flatpak for the ${DECK_USER} user."
+  as_deck_user flatpak install --user -y flathub "$LACT_FLATPAK_ID"
 }
 
 install_flatpak_lactd_service() {
@@ -115,7 +161,7 @@ Description=GPU Control Daemon (via Flatpak)
 After=multi-user.target
 
 [Service]
-Environment=FLATPAK_INSTALL_USER=deck
+Environment=FLATPAK_INSTALL_USER=${DECK_USER}
 ExecStart=bash ${daemon_sh}
 Nice=-10
 Restart=on-failure
@@ -138,7 +184,7 @@ check_lact_setup() {
     echo "Found LACT Flatpak."
   else
     echo "LACT was not found."
-    if ask_yes_no "Install LACT Flatpak from Flathub for the deck user?" "y"; then
+    if ask_yes_no "Install LACT Flatpak from Flathub for the ${DECK_USER} user?" "y"; then
       install_lact_flatpak
     else
       echo "Skipping LACT install. The Decky plugin needs lactd and /run/lactd.sock to tune the GPU."
@@ -182,9 +228,18 @@ check_lact_setup() {
 need_cmd curl
 need_cmd unzip
 
-if [[ "$(id -u)" != "0" ]]; then
-  sudo -v
+if ! id "$DECK_USER" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+Target user '${DECK_USER}' was not found.
+
+Set DECK_HOME and DECK_USER explicitly, then run the installer again. Example:
+
+  DECK_HOME=/home/youruser DECK_USER=youruser bash install.sh
+EOF
+  exit 1
 fi
+
+check_sudo_access
 
 check_lact_setup
 
@@ -206,10 +261,10 @@ fi
 
 as_root systemctl stop plugin_loader.service 2>/dev/null || true
 as_root rm -rf "$PLUGIN_DIR"
-as_root install -d -o deck -g deck "$PLUGIN_DIR"
+as_root install -d -o "$DECK_USER" -g "$DECK_GROUP" "$PLUGIN_DIR"
 as_root cp -a "${tmp}/steamos-lact-toolkit/decky/." "$PLUGIN_DIR/"
 as_root rm -rf "${PLUGIN_DIR}/node_modules" "${PLUGIN_DIR}/__pycache__"
-as_root chown -R deck:deck "$PLUGIN_DIR"
+as_root chown -R "${DECK_USER}:${DECK_GROUP}" "$PLUGIN_DIR"
 
 as_root "${tmp}/steamos-lact-toolkit/persistence/install.sh"
 

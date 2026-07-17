@@ -60,6 +60,11 @@ checks the LACT daemon setup, installs the SteamOS persistence helper, and
 restarts Decky Loader. If LACT or `lactd` is missing, it can guide the user
 through installing the LACT Flatpak and enabling its system daemon.
 
+The installer needs sudo/root access. On SteamOS, set a password first with
+`passwd` if sudo has not been configured yet. On non-`deck` systems, set
+`DECK_HOME` and `DECK_USER` if the Decky homebrew directory is not under
+`/home/deck`.
+
 Manual build/install is also possible from `decky/`.
 
 Install the SteamOS persistence helper from `persistence/`:
