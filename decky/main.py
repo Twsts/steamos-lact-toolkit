@@ -83,9 +83,9 @@ class Plugin:
                 "id": custom["id"],
                 "name": custom["name"],
                 "source": "toolkit",
-                "power_cap": custom["config"]["power_cap"],
-                "voltage_offset": custom["config"]["voltage_offset"],
-                "max_memory_clock": custom["config"]["max_memory_clock"],
+                "power_cap": custom["config"].get("power_cap"),
+                "voltage_offset": custom["config"].get("voltage_offset"),
+                "max_memory_clock": custom["config"].get("max_memory_clock"),
                 "custom": True,
             }
             for custom in self._load_custom_profiles()
@@ -121,20 +121,20 @@ class Plugin:
     def _sanitize_config(self, config) -> dict:
         base = {
             "pmfw_options": {"zero_rpm": True},
-            "power_cap": 0.0,
             "performance_level": "auto",
-            "max_memory_clock": 0,
             "voltage_offset": 0,
         }
         if isinstance(config, dict):
-            base.update(
-                {
-                    "power_cap": float(max(0, min(int(config.get("power_cap", base["power_cap"])), 1000))),
-                    "performance_level": str(config.get("performance_level") or "auto"),
-                    "max_memory_clock": int(max(0, min(int(config.get("max_memory_clock", base["max_memory_clock"])), 5000))),
-                    "voltage_offset": int(max(-300, min(int(config.get("voltage_offset", base["voltage_offset"])), 300))),
-                }
-            )
+            power_cap = config.get("power_cap")
+            if power_cap is not None:
+                base["power_cap"] = float(max(0, min(int(power_cap), 1000)))
+            max_memory_clock = config.get("max_memory_clock")
+            if max_memory_clock is not None:
+                base["max_memory_clock"] = int(max(0, min(int(max_memory_clock), 5000)))
+            voltage_offset = config.get("voltage_offset")
+            if voltage_offset is not None:
+                base["voltage_offset"] = int(max(-300, min(int(voltage_offset), 300)))
+            base["performance_level"] = str(config.get("performance_level") or "auto")
             pmfw = dict(base.get("pmfw_options") or {})
             pmfw["zero_rpm"] = bool((config.get("pmfw_options") or {}).get("zero_rpm", pmfw.get("zero_rpm", True)))
             base["pmfw_options"] = pmfw
@@ -143,8 +143,13 @@ class Plugin:
     def _merge_config(self, current, desired):
         merged = dict(current or {})
         pmfw = dict(merged.get("pmfw_options") or {})
-        pmfw.update(desired["pmfw_options"])
-        merged.update(desired)
+        pmfw.update(desired.get("pmfw_options") or {})
+        for key, value in desired.items():
+            if key == "pmfw_options":
+                continue
+            if key in ("power_cap", "max_memory_clock") and (value is None or value <= 0):
+                continue
+            merged[key] = value
         merged["pmfw_options"] = pmfw
         return merged
 
@@ -321,12 +326,16 @@ class Plugin:
 
     def _applied_state(self, applied: dict, desired: dict) -> str:
         checks = (
-            ("power_cap", desired["power_cap"]),
-            ("max_memory_clock", desired["max_memory_clock"]),
-            ("voltage_offset", desired["voltage_offset"]),
+            ("power_cap", desired.get("power_cap")),
+            ("max_memory_clock", desired.get("max_memory_clock")),
+            ("voltage_offset", desired.get("voltage_offset")),
         )
         missing = False
         for key, target in checks:
+            if target is None:
+                continue
+            if key in ("power_cap", "max_memory_clock") and target <= 0:
+                continue
             value = applied.get(key)
             if value is None:
                 missing = True
