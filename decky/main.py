@@ -18,6 +18,7 @@ class Plugin:
         if not self._home.exists():
             self._home = Path.home()
         self._profiles_path = self._home / ".config" / APP_ID / "profiles.json"
+        self._state_path = self._home / ".config" / APP_ID / "state.json"
 
     async def _lact_request(self, command: str, args=None) -> dict:
         return await asyncio.to_thread(self._lact_request_sync, command, args)
@@ -118,6 +119,42 @@ class Plugin:
         self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
         self._profiles_path.write_text(json.dumps(profiles, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+    def _load_state(self) -> dict:
+        try:
+            data = json.loads(self._state_path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_state(self, state: dict) -> None:
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        self._state_path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _remember_selected_profile(self, profile_id: str | None) -> None:
+        state = self._load_state()
+        if profile_id:
+            state["selected_profile"] = profile_id
+        else:
+            state.pop("selected_profile", None)
+        self._save_state(state)
+
+    def _remembered_profile(self, config, lact_profiles: dict | None, gpu_id: str | None) -> str | None:
+        profile_id = self._load_state().get("selected_profile")
+        if not isinstance(profile_id, str):
+            return None
+        if profile_id.startswith("lact:"):
+            if not gpu_id:
+                return None
+            profile = (lact_profiles or {}).get(profile_id.removeprefix("lact:"))
+            lact_config = (profile.get("gpus") or {}).get(gpu_id) if isinstance(profile, dict) else None
+            if isinstance(lact_config, dict) and self._config_matches(config, self._sanitize_config(lact_config)):
+                return profile_id
+        else:
+            for custom in self._load_custom_profiles():
+                if custom.get("id") == profile_id and self._config_matches(config, custom["config"]):
+                    return profile_id
+        return None
+
     def _sanitize_config(self, config) -> dict:
         base = {
             "pmfw_options": {"zero_rpm": True},
@@ -200,6 +237,9 @@ class Plugin:
         return True
 
     def _detect_profile(self, config, lact_profiles: dict | None = None, gpu_id: str | None = None) -> str | None:
+        remembered = self._remembered_profile(config, lact_profiles, gpu_id)
+        if remembered:
+            return remembered
         if gpu_id:
             for name, profile in (lact_profiles or {}).items():
                 if not isinstance(profile, dict):
@@ -377,12 +417,14 @@ class Plugin:
             profile_id = str(profile_id)
             if profile_id.startswith("lact:"):
                 await self._lact_request("set_profile", {"name": profile_id.removeprefix("lact:"), "auto_switch": False})
+                self._remember_selected_profile(profile_id)
                 return await self.get_status()
             desired = self._profile_config(profile_id)
             gpu_id = await self._selected_gpu_id()
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
             await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
             await self._lact_request("confirm_pending_config", {"command": "confirm"})
+            self._remember_selected_profile(profile_id)
             return await self.get_status()
         except Exception as exc:
             decky.logger.exception("SteamOS LACT Toolkit profile apply failed")
@@ -395,6 +437,7 @@ class Plugin:
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
             await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
             await self._lact_request("confirm_pending_config", {"command": "confirm"})
+            self._remember_selected_profile(None)
             return await self.get_status()
         except Exception as exc:
             decky.logger.exception("SteamOS LACT Toolkit custom apply failed")
@@ -433,6 +476,8 @@ class Plugin:
                 raise ValueError("Only custom profiles can be deleted")
             profiles = [profile for profile in self._load_custom_profiles() if profile.get("id") != profile_id]
             self._save_custom_profiles(profiles)
+            if self._load_state().get("selected_profile") == profile_id:
+                self._remember_selected_profile(None)
             current = await self.get_status()
             if current.get("current_profile") == profile_id:
                 return await self.get_status()
