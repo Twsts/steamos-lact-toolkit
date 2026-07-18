@@ -15,6 +15,7 @@ type Status = {
   profile_ok?: boolean;
   overdrive_ok?: boolean;
   applied_ok?: boolean;
+  applied_state?: "verified" | "partial" | "mismatch";
   applied?: GpuConfig & {
     zero_rpm?: boolean;
     gpu_voltage?: number;
@@ -178,6 +179,10 @@ function StatusCard({ status }: { status: Status | null }) {
         detail = selectedLabel
           ? `${selectedLabel} matches the driver runtime values.`
           : "Current LACT config matches the driver runtime values.";
+      } else if (status.applied_state === "partial") {
+        detail = selectedLabel
+          ? `${selectedLabel} is active; some runtime values are not reported by LACT on this system.`
+          : "Current LACT config is active; some runtime values are not reported by LACT on this system.";
       } else {
         detail = selectedLabel
           ? `${selectedLabel} is selected, but runtime values do not match.`
@@ -262,7 +267,7 @@ function VerificationGrid({ status }: { status: Status }) {
       <KV label="Overdrive" value={status.overdrive_ok ? "Active" : "Inactive"} />
       <KV label="Profile" value={profileText} />
       <KV label="LACT current" value={status.lact_current_profile ?? "Default config"} />
-      <KV label="Applied" value={status.applied_ok ? "Verified" : "Mismatch"} />
+      <KV label="Applied" value={status.applied_ok ? "Verified" : status.applied_state === "partial" ? "Partial" : "Mismatch"} />
       <KV label="Power cap" value={`${config.power_cap ?? "n/a"} -> ${applied.power_cap ?? "n/a"} W (target ${desired.power_cap ?? "n/a"})`} />
       <KV label="Undervolt" value={`${config.voltage_offset ?? "n/a"} -> ${applied.voltage_offset ?? "n/a"} mV (target ${desired.voltage_offset ?? "n/a"})`} />
       <KV label="VRAM max" value={`${config.max_memory_clock ?? "n/a"} -> ${applied.max_memory_clock ?? "n/a"} MHz`} />

@@ -252,16 +252,15 @@ class Plugin:
             profile_ok = True
             overdrive_ok = system_info.get("amdgpu_overdrive_enabled") is True
             applied = self._applied_values(stats, clocks_info)
-            applied_ok = (
-                applied.get("power_cap") == desired["power_cap"]
-                and applied.get("max_memory_clock") == desired["max_memory_clock"]
-                and applied.get("voltage_offset") == desired["voltage_offset"]
-            )
-            level = "ok" if profile_ok and overdrive_ok and applied_ok else "warn"
+            applied_state = self._applied_state(applied, desired)
+            applied_ok = applied_state == "verified"
+            level = "ok" if profile_ok and overdrive_ok and applied_state in ("verified", "partial") else "warn"
             if not overdrive_ok:
                 title = "Undervolt inactive"
-            elif not applied_ok:
+            elif applied_state == "mismatch":
                 title = "Runtime mismatch"
+            elif applied_state == "partial":
+                title = "Runtime partly verified"
             elif not current_profile:
                 title = "Current LACT config"
             else:
@@ -284,6 +283,7 @@ class Plugin:
                 "profile_ok": profile_ok,
                 "overdrive_ok": overdrive_ok,
                 "applied_ok": applied_ok,
+                "applied_state": applied_state,
                 "applied": applied,
                 "limits": self._limits(stats, clocks_info),
                 "stats": {
@@ -318,6 +318,22 @@ class Plugin:
             "gpu_voltage": (stats.get("voltage") or {}).get("gpu"),
             "vram_clock": (stats.get("clockspeed") or {}).get("vram_clockspeed"),
         }
+
+    def _applied_state(self, applied: dict, desired: dict) -> str:
+        checks = (
+            ("power_cap", desired["power_cap"]),
+            ("max_memory_clock", desired["max_memory_clock"]),
+            ("voltage_offset", desired["voltage_offset"]),
+        )
+        missing = False
+        for key, target in checks:
+            value = applied.get(key)
+            if value is None:
+                missing = True
+                continue
+            if value != target:
+                return "mismatch"
+        return "partial" if missing else "verified"
 
     def _limits(self, stats: dict, clocks_info: dict) -> dict:
         stats = self._as_dict(stats)
