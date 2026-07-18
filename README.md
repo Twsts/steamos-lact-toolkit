@@ -68,6 +68,10 @@ The installer needs sudo/root access. On SteamOS, set a password first with
 `DECK_HOME` and `DECK_USER` if the Decky homebrew directory is not under
 `/home/deck`.
 
+When SteamOS readonly mode blocks system service or AMD overdrive files, the
+installer temporarily disables readonly mode for that operation and enables it
+again afterwards. Users should not need to leave SteamOS readonly mode disabled.
+
 Manual build/install is also possible from `decky/`.
 
 Install the SteamOS persistence helper from `persistence/`:

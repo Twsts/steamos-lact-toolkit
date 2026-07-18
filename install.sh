@@ -230,9 +230,21 @@ check_lact_setup() {
   if wait_for_lact_socket; then
     echo "LACT socket OK: /run/lactd.sock"
   else
-    echo "WARNING: /run/lactd.sock is missing."
-    echo "The plugin can install, but it will not work until lactd is running."
-    echo "Check with: systemctl status lactd --no-pager"
+    if flatpak_has_lact; then
+      local daemon_sh
+      daemon_sh="$(flatpak_lact_install_path || true)"
+      if [[ -n "$daemon_sh" ]] && ask_yes_no "Repair/reinstall lactd.service for the LACT Flatpak?" "y"; then
+        with_writable_root install_flatpak_lactd_service "$daemon_sh"
+      fi
+    fi
+
+    if wait_for_lact_socket; then
+      echo "LACT socket OK: /run/lactd.sock"
+    else
+      echo "WARNING: /run/lactd.sock is missing."
+      echo "The plugin can install, but it will not work until lactd is running."
+      echo "Check with: systemctl status lactd --no-pager"
+    fi
   fi
 }
 
