@@ -178,9 +178,9 @@ class Plugin:
         }
         if isinstance(config, dict):
             power_cap = config.get("power_cap")
-            if power_cap is not None:
+            if power_cap is not None and float(power_cap) > 0:
                 base["power_cap"] = float(max(0, min(int(power_cap), 1000)))
-            
+
             gpu_clock_offset = config.get("gpu_clock_offset")
             if gpu_clock_offset is None and "gpu_clock_offsets" in config:
                 offsets = config.get("gpu_clock_offsets") or {}
@@ -193,12 +193,12 @@ class Plugin:
                 base["gpu_clock_offsets"] = {"0": val}
 
             min_memory_clock = config.get("min_memory_clock")
-            if min_memory_clock is not None:
-                base["min_memory_clock"] = int(max(0, min(int(min_memory_clock), 3000)))
+            if min_memory_clock is not None and int(min_memory_clock) > 0:
+                base["min_memory_clock"] = int(max(0, min(int(min_memory_clock), 5000)))
 
             max_memory_clock = config.get("max_memory_clock")
-            if max_memory_clock is not None:
-                base["max_memory_clock"] = int(max(0, min(int(max_memory_clock), 3000)))
+            if max_memory_clock is not None and int(max_memory_clock) > 0:
+                base["max_memory_clock"] = int(max(0, min(int(max_memory_clock), 5000)))
 
             voltage_offset = config.get("voltage_offset")
             if voltage_offset is not None:
@@ -209,14 +209,31 @@ class Plugin:
             base["pmfw_options"] = pmfw
         return base
 
-    def _merge_config(self, current, desired):
+    def _range_supports(self, limits: dict | None, key: str, value) -> bool:
+        if key not in ("gpu_clock_offset", "min_memory_clock", "max_memory_clock"):
+            return True
+        if value is None:
+            return False
+        range_info = (limits or {}).get(key) or {}
+        min_value = range_info.get("min")
+        max_value = range_info.get("max")
+        if min_value is None or max_value is None:
+            return False
+        return float(min_value) <= float(value) <= float(max_value)
+
+    def _merge_config(self, current, desired, limits: dict | None = None):
         merged = dict(current or {})
         pmfw = dict(merged.get("pmfw_options") or {})
         pmfw.update(desired.get("pmfw_options") or {})
+        gpu_clock_offset_allowed = self._range_supports(limits, "gpu_clock_offset", desired.get("gpu_clock_offset"))
         for key, value in desired.items():
             if key == "pmfw_options":
                 continue
+            if key == "gpu_clock_offsets" and not gpu_clock_offset_allowed:
+                continue
             if key in ("power_cap", "min_memory_clock", "max_memory_clock") and (value is None or value <= 0):
+                continue
+            if key in ("gpu_clock_offset", "min_memory_clock", "max_memory_clock") and not self._range_supports(limits, key, value):
                 continue
             merged[key] = value
         merged["pmfw_options"] = pmfw
@@ -458,18 +475,18 @@ class Plugin:
                 "default": power.get("cap_default"),
             },
             "gpu_clock_offset": {
-                "min": sclk_offset.get("min") if (sclk_offset.get("min") is not None and sclk_offset.get("min") < 0) else -1000,
-                "max": sclk_offset.get("max") if sclk_offset.get("max") is not None else 500,
+                "min": sclk_offset.get("min"),
+                "max": sclk_offset.get("max"),
             },
             "min_memory_clock": {
-                "min": mclk.get("min") or 0,
-                "max": 3000,
-                "default": mclk.get("min") or 0,
+                "min": mclk.get("min"),
+                "max": mclk.get("max"),
+                "default": mclk.get("min"),
             },
             "max_memory_clock": {
-                "min": mclk.get("min") or 0,
-                "max": 3000,
-                "default": mclk.get("max") or clocks_info.get("max_mclk") or 3000,
+                "min": mclk.get("min"),
+                "max": mclk.get("max"),
+                "default": mclk.get("max") or clocks_info.get("max_mclk"),
             },
             "voltage_offset": {
                 "min": voltage_offset.get("min"),
@@ -490,7 +507,9 @@ class Plugin:
             desired = self._profile_config(profile_id)
             gpu_id = await self._selected_gpu_id()
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
-            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
+            stats = self._as_dict(await self._lact_request("device_stats", {"id": gpu_id}))
+            clocks_info = self._as_dict(await self._lact_request("device_clocks_info", {"id": gpu_id}))
+            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired, self._limits(stats, clocks_info))})
             await self._lact_request("confirm_pending_config", {"command": "confirm"})
             self._remember_selected_profile(profile_id)
             return await self.get_status()
@@ -503,7 +522,9 @@ class Plugin:
             desired = self._sanitize_config(config)
             gpu_id = await self._selected_gpu_id()
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
-            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
+            stats = self._as_dict(await self._lact_request("device_stats", {"id": gpu_id}))
+            clocks_info = self._as_dict(await self._lact_request("device_clocks_info", {"id": gpu_id}))
+            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired, self._limits(stats, clocks_info))})
             await self._lact_request("confirm_pending_config", {"command": "confirm"})
             self._remember_selected_profile(None)
             return await self.get_status()
@@ -561,7 +582,9 @@ class Plugin:
             current = await self._lact_request("get_gpu_config", {"id": gpu_id})
             desired = self._sanitize_config(current)
             desired["power_cap"] = float(safe_watts)
-            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired)})
+            stats = self._as_dict(await self._lact_request("device_stats", {"id": gpu_id}))
+            clocks_info = self._as_dict(await self._lact_request("device_clocks_info", {"id": gpu_id}))
+            await self._lact_request("set_gpu_config", {"id": gpu_id, "config": self._merge_config(current, desired, self._limits(stats, clocks_info))})
             await self._lact_request("confirm_pending_config", {"command": "confirm"})
             return await self.get_status()
         except Exception as exc:

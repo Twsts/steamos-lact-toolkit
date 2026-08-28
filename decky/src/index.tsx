@@ -167,6 +167,10 @@ function rangeMax(range: NumericRange | undefined, fallback: number): number {
   return Math.round(range?.max ?? fallback);
 }
 
+function hasRange(range: NumericRange | undefined): range is Required<Pick<NumericRange, "min" | "max">> & NumericRange {
+  return typeof range?.min === "number" && typeof range.max === "number" && range.max > range.min;
+}
+
 function StatusCard({ status }: { status: Status | null }) {
   const level = status?.level ?? (status ? "error" : "checking");
   const color = colorFor(level);
@@ -463,14 +467,15 @@ class Content extends Component<Record<string, never>, ContentState> {
     const fanEdit = fanDraft ?? this.fanDraftFromStatus(status ?? { ok: false });
     const powerMin = rangeMin(status?.limits?.power_cap, status?.stats?.power?.cap_min ?? 0);
     const powerMax = rangeMax(status?.limits?.power_cap, status?.stats?.power?.cap_max ?? Math.max(edit.power_cap ?? 0, 1));
-    const gpuClockMin = (status?.limits?.gpu_clock_offset?.min !== undefined && status.limits.gpu_clock_offset.min < 0)
-      ? rangeMin(status.limits.gpu_clock_offset, -1000)
-      : -1000;
-    const gpuClockMax = rangeMax(status?.limits?.gpu_clock_offset, 500);
-    const memoryMinLimit = rangeMin(status?.limits?.min_memory_clock, 0);
-    const memoryMinMax = 3000;
-    const memoryMaxLimit = rangeMin(status?.limits?.max_memory_clock, 0);
-    const memoryMaxMax = 3000;
+    const gpuClockSupported = hasRange(status?.limits?.gpu_clock_offset);
+    const gpuClockMin = gpuClockSupported ? rangeMin(status?.limits?.gpu_clock_offset, 0) : 0;
+    const gpuClockMax = gpuClockSupported ? rangeMax(status?.limits?.gpu_clock_offset, 0) : 0;
+    const memoryMinSupported = hasRange(status?.limits?.min_memory_clock);
+    const memoryMinLimit = memoryMinSupported ? rangeMin(status?.limits?.min_memory_clock, 0) : 0;
+    const memoryMinMax = memoryMinSupported ? rangeMax(status?.limits?.min_memory_clock, 0) : 0;
+    const memoryMaxSupported = hasRange(status?.limits?.max_memory_clock);
+    const memoryMaxLimit = memoryMaxSupported ? rangeMin(status?.limits?.max_memory_clock, 0) : 0;
+    const memoryMaxMax = memoryMaxSupported ? rangeMax(status?.limits?.max_memory_clock, 0) : 0;
     const voltageMin = rangeMin(status?.limits?.voltage_offset, -300);
     const voltageMax = rangeMax(status?.limits?.voltage_offset, 0);
 
@@ -546,7 +551,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                   showValue
                   editableValue
                   valueSuffix=" MHz"
-                  disabled={busy}
+                  disabled={busy || !gpuClockSupported}
                   onChange={(value) => this.updateDraft({ gpu_clock_offset: value })}
                 />
               </PanelSectionRow>
@@ -574,7 +579,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                   showValue
                   editableValue
                   valueSuffix=" MHz"
-                  disabled={busy}
+                  disabled={busy || !memoryMaxSupported}
                   onChange={(value) => this.updateDraft({ max_memory_clock: value })}
                 />
               </PanelSectionRow>
@@ -588,7 +593,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                   showValue
                   editableValue
                   valueSuffix=" MHz"
-                  disabled={busy}
+                  disabled={busy || !memoryMinSupported}
                   onChange={(value) => this.updateDraft({ min_memory_clock: value })}
                 />
               </PanelSectionRow>
