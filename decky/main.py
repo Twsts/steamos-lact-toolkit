@@ -68,6 +68,11 @@ class Plugin:
             config = (profile.get("gpus") or {}).get(gpu_id)
             if not isinstance(config, dict):
                 continue
+            clock_offset = config.get("gpu_clock_offset")
+            if clock_offset is None and "gpu_clock_offsets" in config:
+                offsets = config.get("gpu_clock_offsets") or {}
+                if isinstance(offsets, dict):
+                    clock_offset = offsets.get("0", offsets.get(0))
             profiles.append(
                 {
                     "id": f"lact:{name}",
@@ -75,22 +80,32 @@ class Plugin:
                     "source": "lact",
                     "power_cap": config.get("power_cap"),
                     "voltage_offset": config.get("voltage_offset"),
+                    "gpu_clock_offset": clock_offset,
+                    "min_memory_clock": config.get("min_memory_clock"),
                     "max_memory_clock": config.get("max_memory_clock"),
                     "custom": False,
                 }
             )
-        profiles.extend(
-            {
-                "id": custom["id"],
-                "name": custom["name"],
-                "source": "toolkit",
-                "power_cap": custom["config"].get("power_cap"),
-                "voltage_offset": custom["config"].get("voltage_offset"),
-                "max_memory_clock": custom["config"].get("max_memory_clock"),
-                "custom": True,
-            }
-            for custom in self._load_custom_profiles()
-        )
+        for custom in self._load_custom_profiles():
+            cfg = custom.get("config") or {}
+            clock_offset = cfg.get("gpu_clock_offset")
+            if clock_offset is None and "gpu_clock_offsets" in cfg:
+                offsets = cfg.get("gpu_clock_offsets") or {}
+                if isinstance(offsets, dict):
+                    clock_offset = offsets.get("0", offsets.get(0))
+            profiles.append(
+                {
+                    "id": custom["id"],
+                    "name": custom["name"],
+                    "source": "toolkit",
+                    "power_cap": cfg.get("power_cap"),
+                    "voltage_offset": cfg.get("voltage_offset"),
+                    "gpu_clock_offset": clock_offset,
+                    "min_memory_clock": cfg.get("min_memory_clock"),
+                    "max_memory_clock": cfg.get("max_memory_clock"),
+                    "custom": True,
+                }
+            )
         return profiles
 
     def _load_custom_profiles(self) -> list[dict]:
@@ -165,9 +180,26 @@ class Plugin:
             power_cap = config.get("power_cap")
             if power_cap is not None:
                 base["power_cap"] = float(max(0, min(int(power_cap), 1000)))
+            
+            gpu_clock_offset = config.get("gpu_clock_offset")
+            if gpu_clock_offset is None and "gpu_clock_offsets" in config:
+                offsets = config.get("gpu_clock_offsets") or {}
+                if isinstance(offsets, dict):
+                    gpu_clock_offset = offsets.get("0", offsets.get(0))
+
+            if gpu_clock_offset is not None:
+                val = int(max(-1000, min(int(gpu_clock_offset), 500)))
+                base["gpu_clock_offset"] = val
+                base["gpu_clock_offsets"] = {"0": val}
+
+            min_memory_clock = config.get("min_memory_clock")
+            if min_memory_clock is not None:
+                base["min_memory_clock"] = int(max(0, min(int(min_memory_clock), 3000)))
+
             max_memory_clock = config.get("max_memory_clock")
             if max_memory_clock is not None:
-                base["max_memory_clock"] = int(max(0, min(int(max_memory_clock), 5000)))
+                base["max_memory_clock"] = int(max(0, min(int(max_memory_clock), 3000)))
+
             voltage_offset = config.get("voltage_offset")
             if voltage_offset is not None:
                 base["voltage_offset"] = int(max(-300, min(int(voltage_offset), 300)))
@@ -184,7 +216,7 @@ class Plugin:
         for key, value in desired.items():
             if key == "pmfw_options":
                 continue
-            if key in ("power_cap", "max_memory_clock") and (value is None or value <= 0):
+            if key in ("power_cap", "min_memory_clock", "max_memory_clock") and (value is None or value <= 0):
                 continue
             merged[key] = value
         merged["pmfw_options"] = pmfw
@@ -231,6 +263,16 @@ class Plugin:
         for key, value in desired.items():
             if key == "pmfw_options":
                 if (config.get("pmfw_options") or {}).get("zero_rpm") != (value or {}).get("zero_rpm"):
+                    return False
+            elif key == "gpu_clock_offsets":
+                continue
+            elif key == "gpu_clock_offset":
+                cfg_val = config.get("gpu_clock_offset")
+                if cfg_val is None and "gpu_clock_offsets" in config:
+                    offsets = config.get("gpu_clock_offsets") or {}
+                    if isinstance(offsets, dict):
+                        cfg_val = offsets.get("0", offsets.get(0))
+                if cfg_val != value:
                     return False
             elif config.get(key) != value:
                 return False
@@ -289,6 +331,10 @@ class Plugin:
             lact_profile_state = await self._list_lact_profiles()
             lact_profiles = lact_profile_state.get("profiles") or {}
             config = self._as_dict(await self._lact_request("get_gpu_config", {"id": gpu_id}))
+            if "gpu_clock_offset" not in config and "gpu_clock_offsets" in config:
+                offsets = config.get("gpu_clock_offsets") or {}
+                if isinstance(offsets, dict):
+                    config["gpu_clock_offset"] = offsets.get("0", offsets.get(0))
             stats = self._as_dict(await self._lact_request("device_stats", {"id": gpu_id}))
             clocks_info = self._as_dict(await self._lact_request("device_clocks_info", {"id": gpu_id}))
 
@@ -354,9 +400,18 @@ class Plugin:
         table = ((clocks_info or {}).get("table") or {}).get("value") or {}
         data = table.get("data") or {}
         mclk_range = data.get("current_mclk_range") or {}
+        gpu_clk_offset = data.get("sclk_offset")
+        if gpu_clk_offset is None:
+            gpu_clk_offset = data.get("gpu_clock_offset")
+        if gpu_clk_offset is None and "gpu_clock_offsets" in data:
+            offsets = data.get("gpu_clock_offsets") or {}
+            if isinstance(offsets, dict):
+                gpu_clk_offset = offsets.get("0", offsets.get(0))
         return {
             "power_cap": (stats.get("power") or {}).get("cap_current"),
             "performance_level": stats.get("performance_level"),
+            "gpu_clock_offset": gpu_clk_offset,
+            "min_memory_clock": clocks_info.get("min_mclk") or mclk_range.get("min"),
             "max_memory_clock": clocks_info.get("max_mclk") or mclk_range.get("max"),
             "voltage_offset": data.get("voltage_offset"),
             "zero_rpm": ((stats.get("fan") or {}).get("pmfw_info") or {}).get("zero_rpm_enable"),
@@ -367,6 +422,8 @@ class Plugin:
     def _applied_state(self, applied: dict, desired: dict) -> str:
         checks = (
             ("power_cap", desired.get("power_cap")),
+            ("gpu_clock_offset", desired.get("gpu_clock_offset")),
+            ("min_memory_clock", desired.get("min_memory_clock")),
             ("max_memory_clock", desired.get("max_memory_clock")),
             ("voltage_offset", desired.get("voltage_offset")),
         )
@@ -374,7 +431,7 @@ class Plugin:
         for key, target in checks:
             if target is None:
                 continue
-            if key in ("power_cap", "max_memory_clock") and target <= 0:
+            if key in ("power_cap", "min_memory_clock", "max_memory_clock") and target <= 0:
                 continue
             value = applied.get(key)
             if value is None:
@@ -390,6 +447,7 @@ class Plugin:
         table = ((clocks_info or {}).get("table") or {}).get("value") or {}
         data = table.get("data") or {}
         od_range = data.get("od_range") or {}
+        sclk_offset = od_range.get("sclk_offset") or {}
         mclk = od_range.get("mclk") or {}
         voltage_offset = od_range.get("voltage_offset") or {}
         power = stats.get("power") or {}
@@ -399,9 +457,19 @@ class Plugin:
                 "max": power.get("cap_max"),
                 "default": power.get("cap_default"),
             },
+            "gpu_clock_offset": {
+                "min": sclk_offset.get("min") if (sclk_offset.get("min") is not None and sclk_offset.get("min") < 0) else -1000,
+                "max": sclk_offset.get("max") if sclk_offset.get("max") is not None else 500,
+            },
+            "min_memory_clock": {
+                "min": mclk.get("min") or 0,
+                "max": 3000,
+                "default": mclk.get("min") or 0,
+            },
             "max_memory_clock": {
-                "min": mclk.get("min"),
-                "max": mclk.get("max") or clocks_info.get("max_mclk"),
+                "min": mclk.get("min") or 0,
+                "max": 3000,
+                "default": mclk.get("max") or clocks_info.get("max_mclk") or 3000,
             },
             "voltage_offset": {
                 "min": voltage_offset.get("min"),

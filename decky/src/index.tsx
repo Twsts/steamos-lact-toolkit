@@ -69,6 +69,8 @@ type Status = {
   profiles?: ProfileSummary[];
   limits?: {
     power_cap?: NumericRange;
+    gpu_clock_offset?: NumericRange;
+    min_memory_clock?: NumericRange;
     max_memory_clock?: NumericRange;
     voltage_offset?: NumericRange;
   };
@@ -86,6 +88,9 @@ type GpuConfig = {
   };
   power_cap?: number;
   performance_level?: string;
+  gpu_clock_offset?: number;
+  gpu_clock_offsets?: Record<string, number>;
+  min_memory_clock?: number;
   max_memory_clock?: number;
   voltage_offset?: number;
 };
@@ -96,6 +101,8 @@ type ProfileSummary = {
   source?: "lact" | "toolkit";
   power_cap?: number;
   voltage_offset?: number;
+  gpu_clock_offset?: number;
+  min_memory_clock?: number;
   max_memory_clock?: number;
   custom?: boolean;
 };
@@ -262,6 +269,7 @@ function VerificationGrid({ status }: { status: Status }) {
   const profileText = selectedProfile
     ? `${selectedProfile.source === "lact" ? "LACT" : "Toolkit"}: ${selectedProfile.name}`
     : "Current LACT config";
+  const configClock = config.gpu_clock_offset ?? (config as any).gpu_clock_offsets?.["0"] ?? (config as any).gpu_clock_offsets?.[0];
   return (
     <div style={{ display: "grid", gap: "4px" }}>
       <KV label="Overdrive" value={status.overdrive_ok ? "Active" : "Inactive"} />
@@ -269,8 +277,10 @@ function VerificationGrid({ status }: { status: Status }) {
       <KV label="LACT current" value={status.lact_current_profile ?? "Default config"} />
       <KV label="Applied" value={status.applied_ok ? "Verified" : status.applied_state === "partial" ? "Partial" : "Mismatch"} />
       <KV label="Power cap" value={`${config.power_cap ?? "n/a"} -> ${applied.power_cap ?? "n/a"} W (target ${desired.power_cap ?? "n/a"})`} />
+      <KV label="GPU Clock" value={`${configClock ?? "n/a"} -> ${applied.gpu_clock_offset ?? "n/a"} MHz (target ${desired.gpu_clock_offset ?? "n/a"})`} />
       <KV label="Undervolt" value={`${config.voltage_offset ?? "n/a"} -> ${applied.voltage_offset ?? "n/a"} mV (target ${desired.voltage_offset ?? "n/a"})`} />
       <KV label="VRAM max" value={`${config.max_memory_clock ?? "n/a"} -> ${applied.max_memory_clock ?? "n/a"} MHz`} />
+      <KV label="VRAM min" value={`${config.min_memory_clock ?? "n/a"} -> ${applied.min_memory_clock ?? "n/a"} MHz`} />
       <KV label="Zero RPM" value={`${config.pmfw_options?.zero_rpm ? "On" : "Off"} -> ${applied.zero_rpm ? "On" : "Off"}`} />
     </div>
   );
@@ -371,11 +381,19 @@ class Content extends Component<Record<string, never>, ContentState> {
 
   draftFromStatus(status: Status): GpuConfig {
     const config = status.config ?? status.desired ?? {};
+    const clockOffset =
+      config.gpu_clock_offset ??
+      (config as any).gpu_clock_offsets?.["0"] ??
+      (config as any).gpu_clock_offsets?.[0] ??
+      status.applied?.gpu_clock_offset ??
+      0;
     return {
       pmfw_options: { zero_rpm: config.pmfw_options?.zero_rpm ?? true },
       power_cap: config.power_cap ?? 0,
       performance_level: "auto",
-      max_memory_clock: config.max_memory_clock ?? 0,
+      gpu_clock_offset: clockOffset,
+      min_memory_clock: config.min_memory_clock ?? status.applied?.min_memory_clock ?? 0,
+      max_memory_clock: config.max_memory_clock ?? status.applied?.max_memory_clock ?? 0,
       voltage_offset: config.voltage_offset ?? 0,
     };
   }
@@ -394,15 +412,22 @@ class Content extends Component<Record<string, never>, ContentState> {
   }
 
   updateDraft = (patch: Partial<GpuConfig>) => {
-    this.setState((state) => ({
-      dirty: true,
-      errorSticky: false,
-      draft: {
-        ...(state.draft ?? this.draftFromStatus(state.status ?? { ok: false })),
+    this.setState((state) => {
+      const current = state.draft ?? this.draftFromStatus(state.status ?? { ok: false });
+      const next = {
+        ...current,
         ...patch,
-        pmfw_options: patch.pmfw_options ?? state.draft?.pmfw_options ?? { zero_rpm: true },
-      },
-    }));
+        pmfw_options: patch.pmfw_options ?? current.pmfw_options ?? { zero_rpm: true },
+      };
+      if (patch.gpu_clock_offset !== undefined) {
+        (next as any).gpu_clock_offsets = { "0": patch.gpu_clock_offset };
+      }
+      return {
+        dirty: true,
+        errorSticky: false,
+        draft: next,
+      };
+    });
   };
 
   updateFanDraft = (patch: Partial<FanDraft>) => {
@@ -430,7 +455,7 @@ class Content extends Component<Record<string, never>, ContentState> {
     const profiles = status?.profiles ?? [];
     const profileOptions = [{ data: "__current", label: "Current LACT config" }, ...profiles.map((profile) => ({
       data: profile.id,
-      label: `${profile.source === "lact" ? "LACT" : "Toolkit"}: ${profile.name} ${fmt(profile.power_cap, " W")} / ${fmt(profile.voltage_offset, " mV")}`,
+      label: `${profile.source === "lact" ? "LACT" : "Toolkit"}: ${profile.name} ${fmt(profile.power_cap, " W")} / ${fmt(profile.voltage_offset, " mV")} / ${fmt(profile.gpu_clock_offset, " MHz")}`,
     }))];
     const selectedProfile = status?.current_profile && status.current_profile !== "custom" ? status.current_profile : "__current";
     const selectedProfileInfo = profiles.find((profile) => profile.id === selectedProfile);
@@ -438,8 +463,14 @@ class Content extends Component<Record<string, never>, ContentState> {
     const fanEdit = fanDraft ?? this.fanDraftFromStatus(status ?? { ok: false });
     const powerMin = rangeMin(status?.limits?.power_cap, status?.stats?.power?.cap_min ?? 0);
     const powerMax = rangeMax(status?.limits?.power_cap, status?.stats?.power?.cap_max ?? Math.max(edit.power_cap ?? 0, 1));
-    const memoryMin = rangeMin(status?.limits?.max_memory_clock, 0);
-    const memoryMax = rangeMax(status?.limits?.max_memory_clock, Math.max(edit.max_memory_clock ?? 0, 1));
+    const gpuClockMin = (status?.limits?.gpu_clock_offset?.min !== undefined && status.limits.gpu_clock_offset.min < 0)
+      ? rangeMin(status.limits.gpu_clock_offset, -1000)
+      : -1000;
+    const gpuClockMax = rangeMax(status?.limits?.gpu_clock_offset, 500);
+    const memoryMinLimit = rangeMin(status?.limits?.min_memory_clock, 0);
+    const memoryMinMax = 3000;
+    const memoryMaxLimit = rangeMin(status?.limits?.max_memory_clock, 0);
+    const memoryMaxMax = 3000;
     const voltageMin = rangeMin(status?.limits?.voltage_offset, -300);
     const voltageMax = rangeMax(status?.limits?.voltage_offset, 0);
 
@@ -507,6 +538,20 @@ class Content extends Component<Record<string, never>, ContentState> {
               </PanelSectionRow>
               <PanelSectionRow>
                 <SliderField
+                  label="GPU Clock"
+                  value={Math.round(edit.gpu_clock_offset ?? 0)}
+                  min={gpuClockMin}
+                  max={gpuClockMax}
+                  step={1}
+                  showValue
+                  editableValue
+                  valueSuffix=" MHz"
+                  disabled={busy}
+                  onChange={(value) => this.updateDraft({ gpu_clock_offset: value })}
+                />
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <SliderField
                   label="Undervolt"
                   value={Math.round(edit.voltage_offset ?? 0)}
                   min={voltageMin}
@@ -522,15 +567,29 @@ class Content extends Component<Record<string, never>, ContentState> {
               <PanelSectionRow>
                 <SliderField
                   label="VRAM max"
-                  value={Math.round(edit.max_memory_clock ?? memoryMax)}
-                  min={memoryMin}
-                  max={memoryMax}
+                  value={Math.round(edit.max_memory_clock ?? status?.applied?.max_memory_clock ?? memoryMaxMax)}
+                  min={memoryMaxLimit}
+                  max={memoryMaxMax}
                   step={1}
                   showValue
                   editableValue
                   valueSuffix=" MHz"
                   disabled={busy}
                   onChange={(value) => this.updateDraft({ max_memory_clock: value })}
+                />
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <SliderField
+                  label="VRAM min"
+                  value={Math.round(edit.min_memory_clock ?? status?.applied?.min_memory_clock ?? memoryMinLimit)}
+                  min={memoryMinLimit}
+                  max={memoryMinMax}
+                  step={1}
+                  showValue
+                  editableValue
+                  valueSuffix=" MHz"
+                  disabled={busy}
+                  onChange={(value) => this.updateDraft({ min_memory_clock: value })}
                 />
               </PanelSectionRow>
               <PanelSectionRow>
