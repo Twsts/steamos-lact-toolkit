@@ -13,9 +13,9 @@ This project contains:
 ## Screenshots
 
 <p>
-  <img src="screenshots/status.png?v=4" alt="SteamOS LACT Toolkit status and verification view" width="32%">
-  <img src="screenshots/tuning.png?v=4" alt="SteamOS LACT Toolkit custom tuning controls" width="32%">
-  <img src="screenshots/fan-control.png?v=4" alt="SteamOS LACT Toolkit fan control settings" width="32%">
+  <img src="screenshots/status.png?v=5" alt="SteamOS LACT Toolkit status and verification view" width="32%">
+  <img src="screenshots/tuning.png?v=5" alt="SteamOS LACT Toolkit custom tuning controls" width="32%">
+  <img src="screenshots/fan-control.png?v=5" alt="SteamOS LACT Toolkit fan control settings" width="32%">
 </p>
 
 ## What It Does
