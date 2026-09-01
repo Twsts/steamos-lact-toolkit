@@ -73,6 +73,11 @@ When SteamOS readonly mode blocks system service or AMD overdrive files, the
 installer temporarily disables readonly mode for that operation and enables it
 again afterwards. Users should not need to leave SteamOS readonly mode disabled.
 
+If AMD OverDrive was not already active in the running kernel, a reboot can be
+required before voltage/clock tuning works in Gaming Mode. This is normal: the
+installer can restore the kernel option and regenerate initramfs, but the
+running kernel does not pick that up until the next boot.
+
 Manual build/install is also possible from `decky/`.
 
 Install the SteamOS persistence helper from `persistence/`:
@@ -83,3 +88,24 @@ sudo ./install.sh
 ```
 
 See the README in each subdirectory for details.
+
+## Uninstall
+
+One-command uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Twsts/steamos-lact-toolkit/master/uninstall.sh | bash
+```
+
+The uninstaller removes the Decky plugin and the SteamOS LACT Toolkit
+persistence helper:
+
+- `${DECK_HOME}/homebrew/plugins/steamos-lact-toolkit`
+- `/etc/systemd/system/steamos-lact-restore.service`
+- `/etc/systemd/system/steamos-lact-restore.timer`
+- `/etc/atomic-update.conf.d/steamos-lact-toolkit.conf`
+- `/etc/steamos-lact-toolkit`
+- `/var/lib/steamos-lact-toolkit/reboot-required`
+
+It does not remove LACT itself, `lactd.service`, `/etc/lact`, or AMD OverDrive
+kernel settings. Those may be used by LACT Desktop or other tooling.

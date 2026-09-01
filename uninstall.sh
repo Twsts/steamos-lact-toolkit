@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLUGIN_NAME="steamos-lact-toolkit"
+if [[ -z "${DECK_HOME:-}" ]]; then
+  if [[ -d /home/deck ]]; then
+    DECK_HOME="/home/deck"
+  elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    DECK_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+  else
+    DECK_HOME="${HOME}"
+  fi
+fi
+PLUGIN_DIR="${DECK_HOME}/homebrew/plugins/${PLUGIN_NAME}"
+
+as_root() {
+  if [[ "$(id -u)" == "0" ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+check_sudo_access() {
+  if [[ "$(id -u)" == "0" ]]; then
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This uninstaller needs sudo/root access, but sudo was not found." >&2
+    exit 1
+  fi
+  if ! sudo -v; then
+    echo "This uninstaller needs sudo/root access." >&2
+    exit 1
+  fi
+}
+
+steamos_readonly_enabled() {
+  command -v steamos-readonly >/dev/null 2>&1 && [[ "$(steamos-readonly status 2>/dev/null || true)" == "enabled" ]]
+}
+
+with_writable_root() {
+  local readonly_was_enabled=0
+  if steamos_readonly_enabled; then
+    as_root steamos-readonly disable
+    readonly_was_enabled=1
+  fi
+  set +e
+  "$@"
+  local status=$?
+  set -e
+  if [[ "$readonly_was_enabled" == "1" ]]; then
+    as_root steamos-readonly enable
+  fi
+  return "$status"
+}
+
+remove_system_files() {
+  systemctl disable --now steamos-lact-restore.timer 2>/dev/null || true
+  systemctl stop steamos-lact-restore.service 2>/dev/null || true
+  rm -f /etc/systemd/system/steamos-lact-restore.timer
+  rm -f /etc/systemd/system/steamos-lact-restore.service
+  rm -f /etc/atomic-update.conf.d/steamos-lact-toolkit.conf
+  rm -rf /etc/steamos-lact-toolkit
+  rm -f /var/lib/steamos-lact-toolkit/reboot-required
+  rmdir /var/lib/steamos-lact-toolkit 2>/dev/null || true
+  systemctl daemon-reload
+}
+
+check_sudo_access
+
+as_root systemctl stop plugin_loader.service 2>/dev/null || true
+as_root rm -rf "$PLUGIN_DIR"
+with_writable_root remove_system_files
+as_root systemctl reset-failed plugin_loader.service 2>/dev/null || true
+as_root systemctl start plugin_loader.service 2>/dev/null || true
+
+echo "SteamOS LACT Toolkit removed."
+echo "LACT itself, lactd.service, /etc/lact, and AMD overdrive settings were left intact."
