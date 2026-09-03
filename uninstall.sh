@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PLUGIN_NAME="steamos-lact-toolkit"
-TOOLKIT_VERSION="0.1.25"
+TOOLKIT_VERSION="0.1.26"
 if [[ -z "${DECK_HOME:-}" ]]; then
   if [[ -d /home/deck ]]; then
     DECK_HOME="/home/deck"

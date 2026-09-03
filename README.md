@@ -53,7 +53,7 @@ preset.
 One-command install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Twsts/steamos-lact-toolkit/master/install.sh | bash
+curl -fsSL https://github.com/Twsts/steamos-lact-toolkit/releases/latest/download/install.sh | bash
 ```
 
 The installer downloads the latest release bundle, installs the Decky plugin,
@@ -94,7 +94,7 @@ See the README in each subdirectory for details.
 One-command uninstall:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Twsts/steamos-lact-toolkit/master/uninstall.sh?$(date +%s)" | bash
+curl -fsSL https://github.com/Twsts/steamos-lact-toolkit/releases/latest/download/uninstall.sh | bash
 ```
 
 The uninstaller removes the Decky plugin and the SteamOS LACT Toolkit
