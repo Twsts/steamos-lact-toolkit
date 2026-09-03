@@ -171,6 +171,17 @@ function hasRange(range: NumericRange | undefined): range is Required<Pick<Numer
   return typeof range?.min === "number" && typeof range.max === "number" && range.max > range.min;
 }
 
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  const candidate = finiteNumber(value) ? value : fallback;
+  return Math.round(Math.min(Math.max(candidate, low), high));
+}
+
 function StatusCard({ status }: { status: Status | null }) {
   const level = status?.level ?? (status ? "error" : "checking");
   const color = colorFor(level);
@@ -478,6 +489,12 @@ class Content extends Component<Record<string, never>, ContentState> {
     const memoryMaxMax = memoryMaxSupported ? rangeMax(status?.limits?.max_memory_clock, 0) : 0;
     const voltageMin = rangeMin(status?.limits?.voltage_offset, -300);
     const voltageMax = rangeMax(status?.limits?.voltage_offset, 0);
+    const powerValue = clampInt(edit.power_cap, powerMin, powerMax, powerMin);
+    const gpuClockValue = clampInt(edit.gpu_clock_offset, gpuClockMin, gpuClockMax, 0);
+    const voltageValue = clampInt(edit.voltage_offset, voltageMin, voltageMax, 0);
+    const memoryMaxValue = clampInt(edit.max_memory_clock ?? status?.applied?.max_memory_clock, memoryMaxLimit, memoryMaxMax, memoryMaxMax);
+    const memoryMinValue = clampInt(edit.min_memory_clock ?? status?.applied?.min_memory_clock, memoryMinLimit, memoryMinMax, memoryMinLimit);
+    const staticFanValue = clampInt(fanEdit.static_speed, 0, 100, 50);
 
     return (
       <>
@@ -530,7 +547,7 @@ class Content extends Component<Record<string, never>, ContentState> {
               <PanelSectionRow>
                 <SliderField
                   label="Power cap"
-                  value={Math.round(edit.power_cap ?? powerMin)}
+                  value={powerValue}
                   min={powerMin}
                   max={powerMax}
                   step={1}
@@ -538,13 +555,15 @@ class Content extends Component<Record<string, never>, ContentState> {
                   editableValue
                   valueSuffix=" W"
                   disabled={busy}
-                  onChange={(value) => this.updateDraft({ power_cap: value })}
+                  onChange={(value) => {
+                    if (finiteNumber(value)) this.updateDraft({ power_cap: clampInt(value, powerMin, powerMax, powerValue) });
+                  }}
                 />
               </PanelSectionRow>
               <PanelSectionRow>
                 <SliderField
                   label="GPU Clock"
-                  value={Math.round(edit.gpu_clock_offset ?? 0)}
+                  value={gpuClockValue}
                   min={gpuClockMin}
                   max={gpuClockMax}
                   step={1}
@@ -552,13 +571,15 @@ class Content extends Component<Record<string, never>, ContentState> {
                   editableValue
                   valueSuffix=" MHz"
                   disabled={busy || !gpuClockSupported}
-                  onChange={(value) => this.updateDraft({ gpu_clock_offset: value })}
+                  onChange={(value) => {
+                    if (finiteNumber(value)) this.updateDraft({ gpu_clock_offset: clampInt(value, gpuClockMin, gpuClockMax, gpuClockValue) });
+                  }}
                 />
               </PanelSectionRow>
               <PanelSectionRow>
                 <SliderField
                   label="Undervolt"
-                  value={Math.round(edit.voltage_offset ?? 0)}
+                  value={voltageValue}
                   min={voltageMin}
                   max={voltageMax}
                   step={5}
@@ -566,13 +587,15 @@ class Content extends Component<Record<string, never>, ContentState> {
                   editableValue
                   valueSuffix=" mV"
                   disabled={busy}
-                  onChange={(value) => this.updateDraft({ voltage_offset: value })}
+                  onChange={(value) => {
+                    if (finiteNumber(value)) this.updateDraft({ voltage_offset: clampInt(value, voltageMin, voltageMax, voltageValue) });
+                  }}
                 />
               </PanelSectionRow>
               <PanelSectionRow>
                 <SliderField
                   label="VRAM max"
-                  value={Math.round(edit.max_memory_clock ?? status?.applied?.max_memory_clock ?? memoryMaxMax)}
+                  value={memoryMaxValue}
                   min={memoryMaxLimit}
                   max={memoryMaxMax}
                   step={1}
@@ -580,13 +603,15 @@ class Content extends Component<Record<string, never>, ContentState> {
                   editableValue
                   valueSuffix=" MHz"
                   disabled={busy || !memoryMaxSupported}
-                  onChange={(value) => this.updateDraft({ max_memory_clock: value })}
+                  onChange={(value) => {
+                    if (finiteNumber(value)) this.updateDraft({ max_memory_clock: clampInt(value, memoryMaxLimit, memoryMaxMax, memoryMaxValue) });
+                  }}
                 />
               </PanelSectionRow>
               <PanelSectionRow>
                 <SliderField
                   label="VRAM min"
-                  value={Math.round(edit.min_memory_clock ?? status?.applied?.min_memory_clock ?? memoryMinLimit)}
+                  value={memoryMinValue}
                   min={memoryMinLimit}
                   max={memoryMinMax}
                   step={1}
@@ -594,7 +619,9 @@ class Content extends Component<Record<string, never>, ContentState> {
                   editableValue
                   valueSuffix=" MHz"
                   disabled={busy || !memoryMinSupported}
-                  onChange={(value) => this.updateDraft({ min_memory_clock: value })}
+                  onChange={(value) => {
+                    if (finiteNumber(value)) this.updateDraft({ min_memory_clock: clampInt(value, memoryMinLimit, memoryMinMax, memoryMinValue) });
+                  }}
                 />
               </PanelSectionRow>
               <PanelSectionRow>
@@ -635,7 +662,7 @@ class Content extends Component<Record<string, never>, ContentState> {
                 <PanelSectionRow>
                   <SliderField
                     label="Static fan speed"
-                    value={fanEdit.static_speed}
+                    value={staticFanValue}
                     min={0}
                     max={100}
                     step={1}
@@ -643,7 +670,9 @@ class Content extends Component<Record<string, never>, ContentState> {
                     editableValue
                     valueSuffix="%"
                     disabled={busy}
-                    onChange={(value) => this.updateFanDraft({ static_speed: value })}
+                    onChange={(value) => {
+                      if (finiteNumber(value)) this.updateFanDraft({ static_speed: clampInt(value, 0, 100, staticFanValue) });
+                    }}
                   />
                 </PanelSectionRow>
               )}

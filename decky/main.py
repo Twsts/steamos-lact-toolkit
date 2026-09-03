@@ -177,8 +177,8 @@ class Plugin:
             "voltage_offset": 0,
         }
         if isinstance(config, dict):
-            power_cap = config.get("power_cap")
-            if power_cap is not None and float(power_cap) > 0:
+            power_cap = self._to_number(config.get("power_cap"))
+            if power_cap is not None and power_cap > 0:
                 base["power_cap"] = float(max(0, min(int(power_cap), 1000)))
 
             gpu_clock_offset = config.get("gpu_clock_offset")
@@ -186,21 +186,22 @@ class Plugin:
                 offsets = config.get("gpu_clock_offsets") or {}
                 if isinstance(offsets, dict):
                     gpu_clock_offset = offsets.get("0", offsets.get(0))
+            gpu_clock_offset = self._to_number(gpu_clock_offset)
 
             if gpu_clock_offset is not None:
                 val = int(max(-1000, min(int(gpu_clock_offset), 500)))
                 base["gpu_clock_offset"] = val
                 base["gpu_clock_offsets"] = {"0": val}
 
-            min_memory_clock = config.get("min_memory_clock")
-            if min_memory_clock is not None and int(min_memory_clock) > 0:
+            min_memory_clock = self._to_number(config.get("min_memory_clock"))
+            if min_memory_clock is not None and min_memory_clock > 0:
                 base["min_memory_clock"] = int(max(0, min(int(min_memory_clock), 5000)))
 
-            max_memory_clock = config.get("max_memory_clock")
-            if max_memory_clock is not None and int(max_memory_clock) > 0:
+            max_memory_clock = self._to_number(config.get("max_memory_clock"))
+            if max_memory_clock is not None and max_memory_clock > 0:
                 base["max_memory_clock"] = int(max(0, min(int(max_memory_clock), 5000)))
 
-            voltage_offset = config.get("voltage_offset")
+            voltage_offset = self._to_number(config.get("voltage_offset"))
             if voltage_offset is not None:
                 base["voltage_offset"] = int(max(-300, min(int(voltage_offset), 300)))
             base["performance_level"] = str(config.get("performance_level") or "auto")
@@ -209,17 +210,27 @@ class Plugin:
             base["pmfw_options"] = pmfw
         return base
 
+    def _to_number(self, value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number != number or number in (float("inf"), float("-inf")):
+            return None
+        return number
+
     def _range_supports(self, limits: dict | None, key: str, value) -> bool:
         if key not in ("gpu_clock_offset", "min_memory_clock", "max_memory_clock"):
             return True
-        if value is None:
+        number = self._to_number(value)
+        if number is None:
             return False
         range_info = (limits or {}).get(key) or {}
-        min_value = range_info.get("min")
-        max_value = range_info.get("max")
+        min_value = self._to_number(range_info.get("min"))
+        max_value = self._to_number(range_info.get("max"))
         if min_value is None or max_value is None:
             return False
-        return float(min_value) <= float(value) <= float(max_value)
+        return min_value <= number <= max_value
 
     def _merge_config(self, current, desired, limits: dict | None = None):
         merged = dict(current or {})
@@ -231,9 +242,10 @@ class Plugin:
                 continue
             if key == "gpu_clock_offsets" and not gpu_clock_offset_allowed:
                 continue
-            if key in ("power_cap", "min_memory_clock", "max_memory_clock") and (value is None or value <= 0):
+            number = self._to_number(value)
+            if key in ("power_cap", "min_memory_clock", "max_memory_clock") and (number is None or number <= 0):
                 continue
-            if key in ("gpu_clock_offset", "min_memory_clock", "max_memory_clock") and not self._range_supports(limits, key, value):
+            if key in ("gpu_clock_offset", "min_memory_clock", "max_memory_clock") and not self._range_supports(limits, key, number):
                 continue
             merged[key] = value
         merged["pmfw_options"] = pmfw
