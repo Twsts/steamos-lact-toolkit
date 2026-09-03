@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PLUGIN_NAME="steamos-lact-toolkit"
+TOOLKIT_VERSION="0.1.25"
 if [[ -z "${DECK_HOME:-}" ]]; then
   if [[ -d /home/deck ]]; then
     DECK_HOME="/home/deck"
@@ -67,6 +68,28 @@ remove_system_files() {
   as_root systemctl daemon-reload
 }
 
+verify_removed() {
+  local remaining=0
+  local path
+  for path in \
+    "$PLUGIN_DIR" \
+    /etc/systemd/system/steamos-lact-restore.timer \
+    /etc/systemd/system/steamos-lact-restore.service \
+    /etc/atomic-update.conf.d/steamos-lact-toolkit.conf \
+    /etc/steamos-lact-toolkit \
+    /var/lib/steamos-lact-toolkit/reboot-required; do
+    if as_root test -e "$path"; then
+      echo "Still present: $path" >&2
+      remaining=1
+    fi
+  done
+  if [[ "$remaining" == "1" ]]; then
+    echo "SteamOS LACT Toolkit uninstall did not remove every file listed above." >&2
+    exit 1
+  fi
+}
+
+echo "SteamOS LACT Toolkit uninstaller ${TOOLKIT_VERSION}"
 check_sudo_access
 
 as_root systemctl stop plugin_loader.service 2>/dev/null || true
@@ -74,6 +97,7 @@ as_root rm -rf "$PLUGIN_DIR"
 with_writable_root remove_system_files
 as_root systemctl reset-failed plugin_loader.service 2>/dev/null || true
 as_root systemctl start plugin_loader.service 2>/dev/null || true
+verify_removed
 
 echo "SteamOS LACT Toolkit removed."
 echo "LACT itself, lactd.service, /etc/lact, and AMD overdrive settings were left intact."
