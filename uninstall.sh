@@ -17,7 +17,7 @@ as_root() {
   if [[ "$(id -u)" == "0" ]]; then
     "$@"
   else
-    sudo "$@"
+    sudo -n "$@"
   fi
 }
 
@@ -56,15 +56,15 @@ with_writable_root() {
 }
 
 remove_system_files() {
-  systemctl disable --now steamos-lact-restore.timer 2>/dev/null || true
-  systemctl stop steamos-lact-restore.service 2>/dev/null || true
-  rm -f /etc/systemd/system/steamos-lact-restore.timer
-  rm -f /etc/systemd/system/steamos-lact-restore.service
-  rm -f /etc/atomic-update.conf.d/steamos-lact-toolkit.conf
-  rm -rf /etc/steamos-lact-toolkit
-  rm -f /var/lib/steamos-lact-toolkit/reboot-required
-  rmdir /var/lib/steamos-lact-toolkit 2>/dev/null || true
-  systemctl daemon-reload
+  as_root systemctl disable --now steamos-lact-restore.timer 2>/dev/null || true
+  as_root systemctl stop steamos-lact-restore.service 2>/dev/null || true
+  as_root rm -f /etc/systemd/system/steamos-lact-restore.timer
+  as_root rm -f /etc/systemd/system/steamos-lact-restore.service
+  as_root rm -f /etc/atomic-update.conf.d/steamos-lact-toolkit.conf
+  as_root rm -rf /etc/steamos-lact-toolkit
+  as_root rm -f /var/lib/steamos-lact-toolkit/reboot-required
+  as_root rmdir /var/lib/steamos-lact-toolkit 2>/dev/null || true
+  as_root systemctl daemon-reload
 }
 
 check_sudo_access
